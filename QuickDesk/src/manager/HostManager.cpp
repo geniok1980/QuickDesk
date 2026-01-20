@@ -28,9 +28,7 @@ void HostManager::setMessaging(NativeMessaging* messaging)
     }
 }
 
-void HostManager::connectToServer(const QString& serverUrl,
-                                  const QString& deviceId,
-                                  const QString& accessCode)
+void HostManager::connectToServer(const QString& serverUrl)
 {
     if (!m_messaging || !m_messaging->isReady()) {
         emit errorOccurred("NOT_READY", "Host process is not ready");
@@ -39,20 +37,10 @@ void HostManager::connectToServer(const QString& serverUrl,
 
     QJsonObject message;
     message["type"] = "connect";
-    // Use correct field names expected by C++ Host
+    // Only serverUrl is needed - Host will auto-generate deviceId and accessCode
     message["signalingServerUrl"] = serverUrl;
-    
-    if (!deviceId.isEmpty()) {
-        message["deviceId"] = deviceId;
-    }
-    
-    // accessCodeValue is required by C++ Host
-    // If not provided, generate a temporary one or use empty string
-    QString code = accessCode.isEmpty() ? QString() : accessCode;
-    message["accessCodeValue"] = code;
 
-    qInfo() << "Sending connect message to host:" << serverUrl 
-            << "deviceId:" << deviceId;
+    qInfo() << "Sending connect message to host, serverUrl:" << serverUrl;
     m_messaging->sendMessage(message);
 }
 
@@ -150,6 +138,8 @@ void HostManager::onMessageReceived(const QJsonObject& message)
         handleHelloResponse(message);
     } else if (type == "hostReady") {
         handleHostReady(message);
+    } else if (type == "temporaryPasswordChanged") {
+        handleTemporaryPasswordChanged(message);
     } else if (type == "clientConnected") {
         handleClientConnected(message);
     } else if (type == "clientDisconnected") {
@@ -190,6 +180,20 @@ void HostManager::handleHostReady(const QJsonObject& message)
     emit accessCodeChanged();
     emit connectionStatusChanged();
     emit hostReady(m_deviceId, m_accessCode);
+}
+
+void HostManager::handleTemporaryPasswordChanged(const QJsonObject& message)
+{
+    QString newPassword = message["accessCode"].toString();
+    
+    if (!newPassword.isEmpty()) {
+        m_accessCode = newPassword;
+        
+        qInfo() << "Temporary password changed to:" << m_accessCode;
+        
+        emit accessCodeChanged();
+        emit temporaryPasswordChanged(m_accessCode);
+    }
 }
 
 void HostManager::handleClientConnected(const QJsonObject& message)

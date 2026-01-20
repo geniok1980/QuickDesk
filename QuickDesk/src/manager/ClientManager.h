@@ -102,6 +102,10 @@ private:
     void handleVideoFrameReady(const QJsonObject& message);
     void handleClipboardReceived(const QJsonObject& message);
     void handleError(const QJsonObject& message);
+    void handleConnectionFailed(const QJsonObject& message);
+    void handleHostConnected(const QJsonObject& message);
+    void handleHostDisconnected(const QJsonObject& message);
+    void handleHostConnectionFailed(const QJsonObject& message);
     
     void sendMouseEvent(const QString& connectionId, const QString& eventType,
                         int x, int y, int button, int wheelDelta);

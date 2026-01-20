@@ -216,6 +216,14 @@ void ClientManager::onMessageReceived(const QJsonObject& message)
         handleClipboardReceived(message);
     } else if (type == "error") {
         handleError(message);
+    } else if (type == "connectionFailed") {
+        handleConnectionFailed(message);
+    } else if (type == "onHostConnected") {
+        handleHostConnected(message);
+    } else if (type == "onHostDisconnected") {
+        handleHostDisconnected(message);
+    } else if (type == "onHostConnectionFailed") {
+        handleHostConnectionFailed(message);
     } else {
         qWarning() << "Unknown message type from client:" << type;
     }
@@ -310,6 +318,121 @@ void ClientManager::handleError(const QJsonObject& message)
     
     qWarning() << "Client error:" << connectionId << code << errorMsg;
     emit errorOccurred(connectionId, code, errorMsg);
+}
+
+void ClientManager::handleConnectionFailed(const QJsonObject& message)
+{
+    QString connectionId = message["connectionId"].toString();
+    QString errorCode = message["errorCode"].toString();
+    QString errorMsg = message["message"].toString();
+    
+    qWarning() << "Connection failed:" << connectionId 
+               << "error:" << errorCode << "-" << errorMsg;
+    
+    // Update connection state
+    if (m_connections.contains(connectionId)) {
+        m_connections[connectionId].state = "failed";
+        emit connectionStateChanged(connectionId, "failed", QJsonObject());
+    }
+    
+    // Emit error with specific error code
+    emit errorOccurred(connectionId, errorCode, errorMsg);
+    
+    // Remove failed connection from list
+    m_connections.remove(connectionId);
+    emit connectionCountChanged();
+    emit connectionRemoved(connectionId);
+    emit connectionListChanged();
+    
+    // Update active connection if needed
+    if (m_activeConnectionId == connectionId) {
+        if (m_connections.isEmpty()) {
+            setActiveConnectionId(QString());
+        } else {
+            setActiveConnectionId(m_connections.firstKey());
+        }
+    }
+}
+
+void ClientManager::handleHostConnected(const QJsonObject& message)
+{
+    QString connectionId = message["connectionId"].toString();
+    
+    qInfo() << "Host connected:" << connectionId;
+    
+    if (m_connections.contains(connectionId)) {
+        m_connections[connectionId].state = "connected";
+        emit connectionStateChanged(connectionId, "connected", QJsonObject());
+    }
+    emit connectionListChanged();
+}
+
+void ClientManager::handleHostDisconnected(const QJsonObject& message)
+{
+    QString connectionId = message["connectionId"].toString();
+    
+    qInfo() << "Host disconnected:" << connectionId;
+    
+    if (m_connections.contains(connectionId)) {
+        m_connections[connectionId].state = "disconnected";
+        emit connectionStateChanged(connectionId, "disconnected", QJsonObject());
+    }
+    
+    // Remove disconnected connection
+    m_connections.remove(connectionId);
+    emit connectionCountChanged();
+    emit connectionRemoved(connectionId);
+    emit connectionListChanged();
+    
+    // Update active connection if needed
+    if (m_activeConnectionId == connectionId) {
+        if (m_connections.isEmpty()) {
+            setActiveConnectionId(QString());
+        } else {
+            setActiveConnectionId(m_connections.firstKey());
+        }
+    }
+}
+
+void ClientManager::handleHostConnectionFailed(const QJsonObject& message)
+{
+    QString connectionId = message["connectionId"].toString();
+    int errorCode = message["errorCode"].toInt();
+    
+    qWarning() << "Host connection failed:" << connectionId << "error code:" << errorCode;
+    
+    // Update connection state
+    if (m_connections.contains(connectionId)) {
+        m_connections[connectionId].state = "failed";
+        emit connectionStateChanged(connectionId, "failed", QJsonObject());
+    }
+    
+    // Map protocol::ErrorCode to user-friendly message
+    QString errorMsg;
+    switch (errorCode) {
+        case 1: errorMsg = "认证失败"; break;
+        case 2: errorMsg = "通道错误"; break;
+        case 3: errorMsg = "连接超时"; break;
+        case 4: errorMsg = "网络错误"; break;
+        default: errorMsg = QString("连接失败 (错误码: %1)").arg(errorCode); break;
+    }
+    
+    emit errorOccurred(connectionId, "CONNECTION_FAILED", errorMsg);
+    
+    // Remove failed connection
+    m_connections.remove(connectionId);
+    emit connectionCountChanged();
+    emit connectionRemoved(connectionId);
+    emit connectionListChanged();
+    
+    // Update active connection if needed
+    if (m_activeConnectionId == connectionId) {
+        if (m_connections.isEmpty()) {
+            setActiveConnectionId(QString());
+        } else {
+            setActiveConnectionId(m_connections.firstKey());
+        }
+    }
 }
 
 void ClientManager::sendMouseEvent(const QString& connectionId, const QString& eventType,
