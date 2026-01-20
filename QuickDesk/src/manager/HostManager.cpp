@@ -150,6 +150,8 @@ void HostManager::onMessageReceived(const QJsonObject& message)
         handleClientListChanged(message);
     } else if (type == "error") {
         handleError(message);
+    } else if (type == "signalingStateChanged") {
+        handleSignalingStateChanged(message);
     } else {
         qWarning() << "Unknown message type from host:" << type;
     }
@@ -273,6 +275,70 @@ void HostManager::handleError(const QJsonObject& message)
     
     qWarning() << "Host error:" << code << errorMsg;
     emit errorOccurred(code, errorMsg);
+}
+
+void HostManager::handleSignalingStateChanged(const QJsonObject& message)
+{
+    QString state = message["state"].toString();
+    int retryCount = message["retryCount"].toInt();
+    int nextRetryIn = message["nextRetryIn"].toInt();
+    QString error = message["error"].toString();
+    
+    qInfo() << "Signaling state changed:" << state
+            << "retry:" << retryCount
+            << "next:" << nextRetryIn << "s"
+            << "error:" << error;
+    
+    bool changed = false;
+    
+    if (m_signalingState != state) {
+        m_signalingState = state;
+        changed = true;
+    }
+    if (m_signalingRetryCount != retryCount) {
+        m_signalingRetryCount = retryCount;
+        changed = true;
+    }
+    if (m_signalingNextRetryIn != nextRetryIn) {
+        m_signalingNextRetryIn = nextRetryIn;
+        changed = true;
+    }
+    if (m_signalingError != error) {
+        m_signalingError = error;
+        changed = true;
+    }
+    
+    // Update connected status based on signaling state
+    bool wasConnected = m_isConnected;
+    m_isConnected = (state == "connected");
+    
+    if (changed) {
+        emit signalingStateChanged();
+    }
+    
+    if (wasConnected != m_isConnected) {
+        emit connectionStatusChanged();
+    }
+}
+
+QString HostManager::signalingState() const
+{
+    return m_signalingState;
+}
+
+int HostManager::signalingRetryCount() const
+{
+    return m_signalingRetryCount;
+}
+
+int HostManager::signalingNextRetryIn() const
+{
+    return m_signalingNextRetryIn;
+}
+
+QString HostManager::signalingError() const
+{
+    return m_signalingError;
 }
 
 } // namespace quickdesk

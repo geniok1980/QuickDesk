@@ -32,6 +32,13 @@ class MainController : public QObject {
     Q_PROPERTY(QString deviceId READ deviceId NOTIFY deviceIdChanged)
     Q_PROPERTY(QString accessCode READ accessCode NOTIFY accessCodeChanged)
     Q_PROPERTY(bool isHostConnected READ isHostConnected NOTIFY hostConnectionChanged)
+    
+    // Signaling state properties (convenience for QML)
+    Q_PROPERTY(QString signalingState READ signalingState NOTIFY signalingStateChanged)
+    Q_PROPERTY(int signalingRetryCount READ signalingRetryCount NOTIFY signalingStateChanged)
+    Q_PROPERTY(int signalingNextRetryIn READ signalingNextRetryIn NOTIFY signalingStateChanged)
+    Q_PROPERTY(QString signalingError READ signalingError NOTIFY signalingStateChanged)
+    Q_PROPERTY(QString signalingStatusText READ signalingStatusText NOTIFY signalingStateChanged)
 
 public:
     explicit MainController(QObject* parent = nullptr);
@@ -84,6 +91,13 @@ public:
     QString deviceId() const;
     QString accessCode() const;
     bool isHostConnected() const;
+    
+    // Signaling state convenience properties
+    QString signalingState() const;
+    int signalingRetryCount() const;
+    int signalingNextRetryIn() const;
+    QString signalingError() const;
+    QString signalingStatusText() const;
 
 signals:
     void initializedChanged();
@@ -92,6 +106,7 @@ signals:
     void deviceIdChanged();
     void accessCodeChanged();
     void hostConnectionChanged();
+    void signalingStateChanged();
 
 private slots:
     void onHostProcessStarted();

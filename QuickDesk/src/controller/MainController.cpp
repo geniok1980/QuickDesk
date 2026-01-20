@@ -39,6 +39,8 @@ MainController::MainController(QObject* parent)
             this, &MainController::accessCodeChanged);
     connect(m_hostManager.get(), &HostManager::connectionStatusChanged,
             this, &MainController::hostConnectionChanged);
+    connect(m_hostManager.get(), &HostManager::signalingStateChanged,
+            this, &MainController::signalingStateChanged);
 }
 
 MainController::~MainController()
@@ -153,6 +155,55 @@ QString MainController::accessCode() const
 bool MainController::isHostConnected() const
 {
     return m_hostManager->isConnected();
+}
+
+QString MainController::signalingState() const
+{
+    return m_hostManager->signalingState();
+}
+
+int MainController::signalingRetryCount() const
+{
+    return m_hostManager->signalingRetryCount();
+}
+
+int MainController::signalingNextRetryIn() const
+{
+    return m_hostManager->signalingNextRetryIn();
+}
+
+QString MainController::signalingError() const
+{
+    return m_hostManager->signalingError();
+}
+
+QString MainController::signalingStatusText() const
+{
+    QString state = m_hostManager->signalingState();
+    int retryCount = m_hostManager->signalingRetryCount();
+    int nextRetry = m_hostManager->signalingNextRetryIn();
+    QString error = m_hostManager->signalingError();
+    
+    if (state == "connected") {
+        return "已连接";
+    } else if (state == "connecting") {
+        return "正在连接...";
+    } else if (state == "disconnected") {
+        return "未连接";
+    } else if (state == "failed") {
+        QString msg = "连接失败";
+        if (!error.isEmpty()) {
+            msg += QString(": %1").arg(error);
+        }
+        return msg;
+    } else if (state == "reconnecting") {
+        QString msg = QString("重连中(第%1次)").arg(retryCount);
+        if (nextRetry > 0) {
+            msg += QString(", %1秒后重试").arg(nextRetry);
+        }
+        return msg;
+    }
+    return state;
 }
 
 void MainController::onHostProcessStarted()

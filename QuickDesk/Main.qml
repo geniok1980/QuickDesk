@@ -197,24 +197,66 @@ ApplicationWindow {
                     // Connection status
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 50
-                        color: mainController.isHostConnected ? "#E8F5E9" : "#FFEBEE"
+                        height: 60
+                        color: {
+                            var state = mainController.signalingState
+                            if (state === "connected") return "#E8F5E9"
+                            if (state === "connecting" || state === "reconnecting") return "#FFF8E1"
+                            return "#FFEBEE"
+                        }
                         radius: 8
 
-                        RowLayout {
+                        ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 10
+                            spacing: 4
 
-                            Rectangle {
-                                width: 12
-                                height: 12
-                                radius: 6
-                                color: mainController.isHostConnected ? "#4CAF50" : "#F44336"
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                // Status indicator
+                                Rectangle {
+                                    width: 12
+                                    height: 12
+                                    radius: 6
+                                    color: {
+                                        var state = mainController.signalingState
+                                        if (state === "connected") return "#4CAF50"
+                                        if (state === "connecting" || state === "reconnecting") return "#FF9800"
+                                        return "#F44336"
+                                    }
+                                    
+                                    // Blinking animation for connecting/reconnecting
+                                    SequentialAnimation on opacity {
+                                        loops: Animation.Infinite
+                                        running: mainController.signalingState === "connecting" || 
+                                                 mainController.signalingState === "reconnecting"
+                                        NumberAnimation { to: 0.3; duration: 500 }
+                                        NumberAnimation { to: 1; duration: 500 }
+                                    }
+                                }
+
+                                Text {
+                                    text: mainController.signalingStatusText
+                                    color: {
+                                        var state = mainController.signalingState
+                                        if (state === "connected") return "#2E7D32"
+                                        if (state === "connecting" || state === "reconnecting") return "#E65100"
+                                        return "#C62828"
+                                    }
+                                    font.pixelSize: 13
+                                }
                             }
 
+                            // Show error message if any
                             Text {
-                                text: mainController.isHostConnected ? "已就绪，可接受连接" : "未连接"
-                                color: mainController.isHostConnected ? "#2E7D32" : "#C62828"
+                                visible: mainController.signalingError.length > 0 && 
+                                         mainController.signalingState !== "connected"
+                                text: mainController.signalingError
+                                color: "#999"
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
                         }
                     }

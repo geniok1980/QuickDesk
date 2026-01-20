@@ -34,6 +34,10 @@ class HostManager : public QObject {
     Q_PROPERTY(QString accessCode READ accessCode NOTIFY accessCodeChanged)
     Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectionStatusChanged)
     Q_PROPERTY(int clientCount READ clientCount NOTIFY clientCountChanged)
+    Q_PROPERTY(QString signalingState READ signalingState NOTIFY signalingStateChanged)
+    Q_PROPERTY(int signalingRetryCount READ signalingRetryCount NOTIFY signalingStateChanged)
+    Q_PROPERTY(int signalingNextRetryIn READ signalingNextRetryIn NOTIFY signalingStateChanged)
+    Q_PROPERTY(QString signalingError READ signalingError NOTIFY signalingStateChanged)
 
 public:
     explicit HostManager(QObject* parent = nullptr);
@@ -58,12 +62,19 @@ public:
     bool isConnected() const;
     int clientCount() const;
     QList<SessionInfo> connectedClients() const;
+    
+    // Signaling state getters
+    QString signalingState() const;
+    int signalingRetryCount() const;
+    int signalingNextRetryIn() const;
+    QString signalingError() const;
 
 signals:
     void deviceIdChanged();
     void accessCodeChanged();
     void connectionStatusChanged();
     void clientCountChanged();
+    void signalingStateChanged();
     
     void helloResponseReceived(const QString& version);
     void hostReady(const QString& deviceId, const QString& accessCode);
@@ -86,6 +97,12 @@ private:
     QString m_accessCode;
     bool m_isConnected = false;
     QMap<QString, SessionInfo> m_clients;
+    
+    // Signaling state
+    QString m_signalingState = "disconnected";
+    int m_signalingRetryCount = 0;
+    int m_signalingNextRetryIn = 0;
+    QString m_signalingError;
 
     void handleHelloResponse(const QJsonObject& message);
     void handleHostReady(const QJsonObject& message);
@@ -95,6 +112,7 @@ private:
     void handleAuthorizationRequest(const QJsonObject& message);
     void handleClientListChanged(const QJsonObject& message);
     void handleError(const QJsonObject& message);
+    void handleSignalingStateChanged(const QJsonObject& message);
 };
 
 } // namespace quickdesk
