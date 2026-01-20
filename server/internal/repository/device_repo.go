@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"quickdesk/signaling/internal/models"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -44,6 +45,13 @@ func (r *DeviceRepository) SetOnline(ctx context.Context, deviceID string, onlin
 	return r.db.WithContext(ctx).Model(&models.Device{}).
 		Where("device_id = ?", deviceID).
 		Update("online", online).Error
+}
+
+// UpdateLastSeen updates the last_seen timestamp of a device
+func (r *DeviceRepository) UpdateLastSeen(ctx context.Context, deviceID string) error {
+	return r.db.WithContext(ctx).Model(&models.Device{}).
+		Where("device_id = ?", deviceID).
+		Update("last_seen", time.Now()).Error
 }
 
 // List retrieves devices with pagination

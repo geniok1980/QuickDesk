@@ -66,20 +66,54 @@ func (s *DeviceService) GenerateUniqueDeviceID(ctx context.Context) (string, err
 
 // RegisterDeviceRequest represents a device registration request
 type RegisterDeviceRequest struct {
+	DeviceID   string `json:"device_id"`   // Optional: if provided, verify/use existing
 	OS         string `json:"os"`
 	OSVersion  string `json:"os_version"`
 	AppVersion string `json:"app_version"`
 }
 
-// RegisterDevice registers a new device
-func (s *DeviceService) RegisterDevice(ctx context.Context, req *RegisterDeviceRequest) (*models.Device, error) {
-	// Generate unique device ID
-	deviceID, err := s.GenerateUniqueDeviceID(ctx)
-	if err != nil {
-		return nil, err
+// RegisterDeviceResponse represents the response for device registration
+type RegisterDeviceResponse struct {
+	DeviceID string `json:"device_id"`
+	IsNew    bool   `json:"is_new"` // true if newly created, false if already existed
+}
+
+// RegisterDevice registers a new device or returns existing one
+// Returns (device, isNew, error)
+func (s *DeviceService) RegisterDevice(ctx context.Context, req *RegisterDeviceRequest) (*models.Device, bool, error) {
+	// If device_id is provided, check if it exists
+	if req.DeviceID != "" {
+		existingDevice, err := s.repo.GetByDeviceID(ctx, req.DeviceID)
+		if err == nil {
+			// Device exists, update last_seen and return
+			log.Printf("Device already exists: device_id=%s", req.DeviceID)
+			s.repo.UpdateLastSeen(ctx, req.DeviceID)
+			return existingDevice, false, nil
+		}
+		if err != gorm.ErrRecordNotFound {
+			// Unexpected error
+			return nil, false, fmt.Errorf("failed to check device: %w", err)
+		}
+		// Device not found, will create new one below
+		log.Printf("Device ID %s not found in database, creating new device", req.DeviceID)
 	}
 	
-	return s.RegisterDeviceWithID(ctx, deviceID, req)
+	// Generate unique device ID if not provided
+	deviceID := req.DeviceID
+	if deviceID == "" {
+		var err error
+		deviceID, err = s.GenerateUniqueDeviceID(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	
+	device, err := s.RegisterDeviceWithID(ctx, deviceID, req)
+	if err != nil {
+		return nil, false, err
+	}
+	
+	return device, true, nil
 }
 
 // RegisterDeviceWithID registers a device with a specific device ID

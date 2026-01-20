@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+// WebSocket message types
+type WSMessage struct {
+	Type     string `json:"type"`
+	Password string `json:"password,omitempty"`
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -185,6 +192,31 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		
 		log.Printf("Received message from %s (%s): %d bytes", connectionKey, role, len(message))
 		
+		// Try to parse as JSON to check for special message types
+		var wsMsg WSMessage
+		if err := json.Unmarshal(message, &wsMsg); err == nil {
+			// Handle special Host -> Server messages
+			if !isClient && wsMsg.Type == "set_temp_password" {
+				// Host is setting/updating temporary password
+				if wsMsg.Password != "" {
+					err := h.authService.SetTemporaryPassword(context.Background(), deviceID, wsMsg.Password)
+					if err != nil {
+						log.Printf("Failed to set temp password for device %s: %v", deviceID, err)
+						h.sendToConnection(conn, map[string]interface{}{
+							"type":    "error",
+							"message": "Failed to set password",
+						})
+					} else {
+						log.Printf("Temporary password set for device %s", deviceID)
+						h.sendToConnection(conn, map[string]interface{}{
+							"type": "password_set",
+						})
+					}
+				}
+				continue // Don't forward this message to clients
+			}
+		}
+		
 		// Forward message
 		if isClient {
 			// Client -> Host
@@ -193,6 +225,18 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			// Host -> All Clients (broadcast)
 			h.broadcastToClients(deviceID, message)
 		}
+	}
+}
+
+// sendToConnection sends a JSON message to a specific WebSocket connection
+func (h *WSHandler) sendToConnection(conn *websocket.Conn, msg map[string]interface{}) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Failed to marshal message: %v", err)
+		return
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		log.Printf("Failed to send message: %v", err)
 	}
 }
 
@@ -221,8 +265,6 @@ func (h *WSHandler) registerConnection(connectionKey string, connInfo *Connectio
 // unregisterConnection unregisters a WebSocket connection
 func (h *WSHandler) unregisterConnection(connectionKey string, deviceID string, clientID string, isClient bool) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	
 	delete(h.connections, connectionKey)
 	
 	// Remove client from device's client list
@@ -244,8 +286,19 @@ func (h *WSHandler) unregisterConnection(connectionKey string, deviceID string, 
 			clientID, deviceID, len(h.deviceClients[deviceID]))
 	}
 	
+	remainingConnections := len(h.connections)
+	h.mu.Unlock()
+	
+	// For Host disconnection, clean up Redis temporary password
+	if !isClient {
+		log.Printf("Host disconnected, cleaning up temporary password for device %s", deviceID)
+		if err := h.authService.ClearTemporaryPassword(context.Background(), deviceID); err != nil {
+			log.Printf("Failed to clear temporary password for device %s: %v", deviceID, err)
+		}
+	}
+	
 	log.Printf("Connection unregistered: connection_key=%s (remaining connections: %d)", 
-		connectionKey, len(h.connections))
+		connectionKey, remainingConnections)
 }
 
 // broadcastToClients broadcasts a message from Host to all connected Clients
@@ -322,4 +375,15 @@ func (h *WSHandler) forwardToHost(deviceID string, clientID string, message []by
 	} else {
 		log.Printf("Server -> Host: Forwarded %d bytes from client %s", len(message), clientID)
 	}
+}
+
+// IsHostOnline checks if a host is online (has active WebSocket connection)
+func (h *WSHandler) IsHostOnline(deviceID string) bool {
+	hostKey := fmt.Sprintf("%s_host", deviceID)
+	
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	
+	_, exists := h.connections[hostKey]
+	return exists
 }

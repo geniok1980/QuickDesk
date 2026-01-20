@@ -42,6 +42,9 @@ func main() {
 	// Initialize handlers
 	apiHandler := handler.NewAPIHandler(deviceService, authService, cfg)
 	wsHandler := handler.NewWSHandler(deviceService, authService)
+	
+	// Set WSHandler reference for API handler (needed for online status checks)
+	apiHandler.SetWSHandler(wsHandler)
 
 	// Create Gin router
 	gin.SetMode(gin.ReleaseMode)
@@ -55,8 +58,13 @@ func main() {
 	// API routes
 	v1 := router.Group("/api/v1")
 	{
+		// Device management
 		v1.POST("/devices/register", apiHandler.RegisterDevice)
 		v1.GET("/devices/:device_id", apiHandler.GetDevice)
+		v1.GET("/devices/:device_id/status", apiHandler.GetDeviceStatus)
+		
+		// Authentication
+		v1.POST("/auth/verify", apiHandler.VerifyPassword)
 	}
 
 	// WebSocket routes

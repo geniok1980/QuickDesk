@@ -16,8 +16,8 @@ import (
 const (
 	// Temporary password length (6 digits)
 	TempPasswordLength = 6
-	// Temporary password TTL (5 minutes)
-	TempPasswordTTL = 5 * time.Minute
+	// Temporary password TTL (2 hours, as per design doc)
+	TempPasswordTTL = 2 * time.Hour
 )
 
 type AuthService struct {
@@ -92,4 +92,18 @@ func (s *AuthService) VerifyDevice(ctx context.Context, deviceID, accessCode str
 	// TODO: Add permanent password verification (from database)
 	
 	return false
+}
+
+// ClearTemporaryPassword removes the temporary password for a device
+// Called when Host disconnects
+func (s *AuthService) ClearTemporaryPassword(ctx context.Context, deviceID string) error {
+	key := fmt.Sprintf("temp_password:%s", deviceID)
+	
+	err := s.redis.Del(ctx, key).Err()
+	if err != nil {
+		return fmt.Errorf("failed to clear temporary password: %w", err)
+	}
+	
+	log.Printf("Temporary password cleared for device_id=%s", deviceID)
+	return nil
 }
