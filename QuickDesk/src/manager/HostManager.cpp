@@ -200,10 +200,14 @@ void HostManager::onMessageReceived(const QJsonObject& message)
 
     if (type == "helloResponse") {
         handleHelloResponse(message);
+    } else if (type == "connectResponse") {
+        handleConnectResponse(message);
     } else if (type == "hostReady") {
         handleHostReady(message);
     } else if (type == "temporaryPasswordChanged") {
         handleTemporaryPasswordChanged(message);
+    } else if (type == "natPolicyChanged") {
+        handleNatPolicyChanged(message);
     } else if (type == "clientConnected") {
         handleClientConnected(message);
     } else if (type == "clientDisconnected") {
@@ -218,6 +222,8 @@ void HostManager::onMessageReceived(const QJsonObject& message)
         handleSignalingStateChanged(message);
     } else if (type == "refreshTempPasswordResponse") {
         handleRefreshTempPasswordResponse(message);
+    } else if (type == "disconnectResponse") {
+        handleDisconnectResponse(message);
     } else {
         qWarning() << "Unknown message type from host:" << type;
     }
@@ -233,6 +239,18 @@ void HostManager::handleHelloResponse(const QJsonObject& message)
     QString version = message["version"].toString();
     qInfo() << "Host hello response, version:" << version;
     emit helloResponseReceived(version);
+}
+
+void HostManager::handleConnectResponse(const QJsonObject& message)
+{
+    Q_UNUSED(message);
+    qInfo() << "Host connect response received";
+}
+
+void HostManager::handleNatPolicyChanged(const QJsonObject& message)
+{
+    Q_UNUSED(message);
+    qInfo() << "Host NAT policy changed";
 }
 
 void HostManager::handleHostReady(const QJsonObject& message)
@@ -400,6 +418,12 @@ void HostManager::handleSignalingStateChanged(const QJsonObject& message)
     if (wasConnected != m_isConnected) {
         emit connectionStatusChanged();
     }
+}
+
+void HostManager::handleDisconnectResponse(const QJsonObject& message)
+{
+    Q_UNUSED(message);
+    qInfo() << "Host disconnect response received";
 }
 
 QString HostManager::signalingState() const

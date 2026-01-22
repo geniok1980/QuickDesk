@@ -101,6 +101,7 @@ private:
 
     QString generateConnectionId();
     void handleHelloResponse(const QJsonObject& message);
+    void handleConnectToHostResponse(const QJsonObject& message);
     void handleConnectionStateChanged(const QJsonObject& message);
     void handleConnectionListChanged(const QJsonObject& message);
     void handleVideoFrameReady(const QJsonObject& message);
@@ -110,6 +111,8 @@ private:
     void handleHostConnected(const QJsonObject& message);
     void handleHostDisconnected(const QJsonObject& message);
     void handleHostConnectionFailed(const QJsonObject& message);
+    void handleDisconnectFromHostResponse(const QJsonObject& message);
+    void handleDisconnectAllResponse(const QJsonObject& message);
     
     void sendMouseEvent(const QString& connectionId, const QString& eventType,
                         int x, int y, int button, int wheelDelta);

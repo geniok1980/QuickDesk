@@ -107,12 +107,23 @@ void ProcessManager::stopHostProcess()
     m_hostStoppingIntentionally = true;
     
     if (m_hostProcess && m_hostProcess->state() != QProcess::NotRunning) {
-        qInfo() << "Stopping host process...";
+        qInfo() << "begin stop host process...";
         m_hostProcess->closeWriteChannel(); // Close stdin to trigger graceful exit
-        if (!m_hostProcess->waitForFinished(1000)) {
+        bool finished = m_hostProcess->waitForFinished(10000);
+        if (!finished) {
             qWarning() << "Host process did not exit gracefully, terminating...";
             m_hostProcess->terminate();
+            finished = m_hostProcess->waitForFinished(5000);
+        }
+        if (!finished) {
+            qWarning() << "Host process did not terminate, killing...";
             m_hostProcess->kill();
+            finished = m_hostProcess->waitForFinished(5000);
+        }
+        qInfo() << "end stop host process...";
+        if (!finished && m_hostProcess->state() != QProcess::NotRunning) {
+            qWarning() << "Host process still running, skipping destroy";
+            return;
         }
     }
     m_hostMessaging.reset();
@@ -127,12 +138,23 @@ void ProcessManager::stopClientProcess()
     m_clientStoppingIntentionally = true;
     
     if (m_clientProcess && m_clientProcess->state() != QProcess::NotRunning) {
-        qInfo() << "Stopping client process...";
+        qInfo() << "begin stop client process...";
         m_clientProcess->closeWriteChannel();
-        if (!m_clientProcess->waitForFinished(1000)) {
+        bool finished = m_clientProcess->waitForFinished(3000);
+        if (!finished) {
             qWarning() << "Client process did not exit gracefully, terminating...";
             m_clientProcess->terminate();
+            finished = m_clientProcess->waitForFinished(3000);
+        }
+        if (!finished) {
+            qWarning() << "Client process did not terminate, killing...";
             m_clientProcess->kill();
+            finished = m_clientProcess->waitForFinished(3000);
+        }
+        qInfo() << "end stop client process...";
+        if (!finished && m_clientProcess->state() != QProcess::NotRunning) {
+            qWarning() << "Client process still running, skipping destroy";
+            return;
         }
     }
     m_clientMessaging.reset();

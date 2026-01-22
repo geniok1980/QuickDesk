@@ -116,6 +116,8 @@ private:
     QString m_signalingError;
 
     void handleHelloResponse(const QJsonObject& message);
+    void handleConnectResponse(const QJsonObject& message);
+    void handleNatPolicyChanged(const QJsonObject& message);
     void handleHostReady(const QJsonObject& message);
     void handleTemporaryPasswordChanged(const QJsonObject& message);
     void handleClientConnected(const QJsonObject& message);
@@ -125,6 +127,7 @@ private:
     void handleError(const QJsonObject& message);
     void handleSignalingStateChanged(const QJsonObject& message);
     void handleRefreshTempPasswordResponse(const QJsonObject& message);
+    void handleDisconnectResponse(const QJsonObject& message);
 };
 
 } // namespace quickdesk
