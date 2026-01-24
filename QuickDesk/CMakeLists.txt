@@ -28,6 +28,19 @@ set(CONTROLLER_HEADERS
     src/controller/MainController.h
 )
 
+set(CORE_SOURCES
+    src/core/common/commontype.h
+    src/core/db/appconfigdatabase.h
+    src/core/db/appconfigdatabase.cpp
+    src/core/db/userdatadatabase.h
+    src/core/db/userdatadatabase.cpp
+    src/core/localconfigcenter.h
+    src/core/localconfigcenter.cpp
+    src/core/userdatacenter.h
+    src/core/userdatacenter.cpp
+)
+source_group(core FILES ${CORE_SOURCES})
+
 set(ALL_SOURCES
     main.cpp
     ${MANAGER_SOURCES}
@@ -44,6 +57,7 @@ qt_standard_project_setup(REQUIRES 6.5)
 qt_add_executable(QuickDesk
     ${ALL_SOURCES}
     ${ALL_HEADERS}
+    ${CORE_SOURCES}
 )
 
 qt_add_qml_module(QuickDesk

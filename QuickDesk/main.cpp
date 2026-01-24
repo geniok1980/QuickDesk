@@ -7,6 +7,8 @@
 #include <QIcon>
 #include <QDebug>
 
+#include "core/localconfigcenter.h"
+#include "core/userdatacenter.h"
 #include "infra/env/applicationcontext.h"
 #include "infra/log/log.h"
 
@@ -33,6 +35,9 @@ int main(int argc, char *argv[])
 
     qInfo() << "QuickDesk starting...";
     qInfo() << "Qt version:" << qVersion();
+
+    core::LocalConfigCenter::instance().init();
+    core::UserDataCenter::instance().init();
 
     // Register C++ types for QML
     qmlRegisterType<quickdesk::MainController>("QuickDesk", 1, 0, "MainController");
