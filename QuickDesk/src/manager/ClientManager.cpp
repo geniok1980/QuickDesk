@@ -185,6 +185,51 @@ void ClientManager::syncClipboard(const QString& connectionId, const QString& te
     m_messaging->sendMessage(message);
 }
 
+void ClientManager::setTargetFramerate(const QString& connectionId, int framerate)
+{
+    if (!m_messaging || !m_messaging->isReady()) {
+        LOG_WARN("Cannot set framerate: messaging not ready");
+        return;
+    }
+
+    // Clamp to valid range
+    framerate = qBound(1, framerate, 60);
+
+    LOG_INFO("Setting target framerate for {}: {} FPS", 
+             connectionId.toStdString(), framerate);
+
+    QJsonObject message;
+    message["type"] = "setFramerate";
+    message["connectionId"] = connectionId;
+    message["framerate"] = framerate;
+    m_messaging->sendMessage(message);
+}
+
+void ClientManager::setResolution(const QString& connectionId, int width, int height, int dpi)
+{
+    if (!m_messaging || !m_messaging->isReady()) {
+        LOG_WARN("Cannot set resolution: messaging not ready");
+        return;
+    }
+
+    // Validate dimensions
+    if (width <= 0 || height <= 0 || width > 8192 || height > 8192) {
+        LOG_WARN("Invalid resolution: {}x{}", width, height);
+        return;
+    }
+
+    LOG_INFO("Setting resolution for {}: {}x{} @ {} DPI", 
+             connectionId.toStdString(), width, height, dpi);
+
+    QJsonObject message;
+    message["type"] = "setResolution";
+    message["connectionId"] = connectionId;
+    message["width"] = width;
+    message["height"] = height;
+    message["dpi"] = dpi;
+    m_messaging->sendMessage(message);
+}
+
 int ClientManager::connectionCount() const
 {
     return m_connections.size();
@@ -266,6 +311,13 @@ void ClientManager::onMessageReceived(const QJsonObject& message)
         handleDisconnectAllResponse(message);
     } else if (type == "cursorShapeChanged") {
         handleCursorShapeChanged(message);
+    } else if (type == "setFramerateResponse" || type == "setResolutionResponse") {
+        // Acknowledgement responses - just log success/failure
+        bool success = message["success"].toBool();
+        if (!success) {
+            QString error = message["error"].toString();
+            LOG_WARN("{} failed: {}", type.toStdString(), error.toStdString());
+        }
     } else {
         LOG_WARN("Unknown message type from client: {}", type.toStdString());
     }

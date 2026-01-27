@@ -637,6 +637,81 @@ ApplicationWindow {
                                 visible: remoteDesktopView.hasVideo
                             }
                             
+                            // Separator
+                            Rectangle {
+                                width: 1
+                                height: 20
+                                color: "#DDD"
+                                visible: remoteDesktopView.hasVideo
+                            }
+                            
+                            // Framerate control
+                            Row {
+                                spacing: 5
+                                visible: remoteDesktopView.hasVideo
+                                
+                                Text {
+                                    text: "目标帧率:"
+                                    font.pixelSize: 12
+                                    color: "#666"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                
+                                ComboBox {
+                                    id: framerateCombo
+                                    width: 70
+                                    font.pixelSize: 12
+                                    model: ["15", "24", "30", "60"]
+                                    currentIndex: 2  // Default 30 FPS
+                                    
+                                    onActivated: function(index) {
+                                        var fps = parseInt(model[index])
+                                        mainController.clientManager.setTargetFramerate(
+                                            root.activeVideoConnectionId, fps)
+                                    }
+                                }
+                            }
+                            
+                            // Resolution control
+                            Row {
+                                spacing: 5
+                                visible: remoteDesktopView.hasVideo
+                                
+                                Text {
+                                    text: "分辨率:"
+                                    font.pixelSize: 12
+                                    color: "#666"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                
+                                ComboBox {
+                                    id: resolutionCombo
+                                    width: 120
+                                    font.pixelSize: 12
+                                    model: [
+                                        "自适应",
+                                        "1920x1080",
+                                        "1600x900",
+                                        "1366x768",
+                                        "1280x720",
+                                        "1024x768"
+                                    ]
+                                    currentIndex: 0
+                                    
+                                    onActivated: function(index) {
+                                        if (index === 0) {
+                                            // Auto - don't change host resolution
+                                            return
+                                        }
+                                        var res = model[index].split("x")
+                                        var width = parseInt(res[0])
+                                        var height = parseInt(res[1])
+                                        mainController.clientManager.setResolution(
+                                            root.activeVideoConnectionId, width, height, 96)
+                                    }
+                                }
+                            }
+                            
                             Button {
                                 text: "断开连接"
                                 font.pixelSize: 12

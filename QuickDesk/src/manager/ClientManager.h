@@ -67,6 +67,10 @@ public:
     // Clipboard
     Q_INVOKABLE void syncClipboard(const QString& connectionId, const QString& text);
 
+    // Video control
+    Q_INVOKABLE void setTargetFramerate(const QString& connectionId, int framerate);
+    Q_INVOKABLE void setResolution(const QString& connectionId, int width, int height, int dpi = 96);
+
     // State getters
     int connectionCount() const;
     QString activeConnectionId() const;
