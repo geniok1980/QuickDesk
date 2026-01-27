@@ -10,6 +10,7 @@ set(MANAGER_SOURCES
     src/manager/ServerManager.cpp
     src/manager/HostManager.cpp
     src/manager/ClientManager.cpp
+    src/manager/SharedMemoryManager.cpp
 )
 
 set(MANAGER_HEADERS
@@ -18,6 +19,7 @@ set(MANAGER_HEADERS
     src/manager/ServerManager.h
     src/manager/HostManager.h
     src/manager/ClientManager.h
+    src/manager/SharedMemoryManager.h
 )
 
 set(CONTROLLER_SOURCES
@@ -26,6 +28,14 @@ set(CONTROLLER_SOURCES
 
 set(CONTROLLER_HEADERS
     src/controller/MainController.h
+)
+
+set(COMPONENT_SOURCES
+    src/component/VideoFrameProvider.cpp
+)
+
+set(COMPONENT_HEADERS
+    src/component/VideoFrameProvider.h
 )
 
 set(CORE_SOURCES
@@ -45,11 +55,13 @@ set(ALL_SOURCES
     main.cpp
     ${MANAGER_SOURCES}
     ${CONTROLLER_SOURCES}
+    ${COMPONENT_SOURCES}
 )
 
 set(ALL_HEADERS
     ${MANAGER_HEADERS}
     ${CONTROLLER_HEADERS}
+    ${COMPONENT_HEADERS}
 )
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -112,6 +124,7 @@ qt_add_qml_module(QuickDesk
         qml/component/QDTextArea.qml
         qml/component/QDSearchBox.qml
         qml/component/QDNavigationView.qml
+        qml/component/RemoteDesktopView.qml
     RESOURCES
         res/font/SegoeFluentIcons.ttf
         qml/component/qmldir
@@ -134,6 +147,7 @@ target_link_libraries(QuickDesk
     Qt6::Quick 
     Qt6::QuickControls2
     Qt6::Core
+    Qt6::Multimedia
     base
     infra
 )

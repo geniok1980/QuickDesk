@@ -5,11 +5,15 @@
 #include "infra/log/log.h"
 #include <QUuid>
 #include <QJsonArray>
+#include <QDir>
+#include <QFileInfo>
+#include <QDateTime>
 
 namespace quickdesk {
 
 ClientManager::ClientManager(QObject* parent)
     : QObject(parent)
+    , m_sharedMemoryManager(std::make_unique<SharedMemoryManager>(this))
 {
 }
 
@@ -359,6 +363,26 @@ void ClientManager::handleVideoFrameReady(const QJsonObject& message)
 {
     QString connectionId = message["connectionId"].toString();
     int frameIndex = message["frameIndex"].toInt();
+    int width = message["width"].toInt();
+    int height = message["height"].toInt();
+    QString sharedMemoryName = message["sharedMemoryName"].toString();
+    
+    // Attach to shared memory if not already attached
+    if (!m_sharedMemoryManager->isAttached(connectionId)) {
+        if (!m_sharedMemoryManager->attach(connectionId, sharedMemoryName)) {
+            LOG_WARN("Failed to attach to shared memory for connection {}", 
+                     connectionId.toStdString());
+            return;
+        }
+        LOG_INFO("Attached to shared memory: {} ({}x{})", 
+                 sharedMemoryName.toStdString(), width, height);
+    }
+    
+    // Update connection info with resolution
+    if (m_connections.contains(connectionId)) {
+        m_connections[connectionId].width = width;
+        m_connections[connectionId].height = height;
+    }
     
     emit videoFrameReady(connectionId, frameIndex);
 }
@@ -438,6 +462,9 @@ void ClientManager::handleHostDisconnected(const QJsonObject& message)
         m_connections[connectionId].state = "disconnected";
         emit connectionStateChanged(connectionId, "disconnected", QJsonObject());
     }
+    
+    // Detach from shared memory
+    m_sharedMemoryManager->detach(connectionId);
     
     // Remove disconnected connection
     m_connections.remove(connectionId);
@@ -542,6 +569,41 @@ void ClientManager::sendKeyboardEvent(const QString& connectionId, const QString
     message["keyCode"] = keyCode;
     message["modifiers"] = modifiers;
     m_messaging->sendMessage(message);
+}
+
+bool ClientManager::saveFrameToFile(const QString& connectionId, 
+                                     const QString& filePath)
+{
+    if (!m_sharedMemoryManager->isAttached(connectionId)) {
+        LOG_WARN("Cannot save frame: not attached to shared memory for {}", 
+                 connectionId.toStdString());
+        return false;
+    }
+    
+    QImage frame = m_sharedMemoryManager->readFrame(connectionId);
+    if (frame.isNull()) {
+        LOG_WARN("Cannot save frame: failed to read frame for {}", 
+                 connectionId.toStdString());
+        return false;
+    }
+    
+    // Ensure directory exists
+    QFileInfo fileInfo(filePath);
+    QDir dir = fileInfo.dir();
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+    
+    // Save to file
+    bool success = frame.save(filePath);
+    if (success) {
+        LOG_INFO("Saved frame to: {} ({}x{})", 
+                 filePath.toStdString(), frame.width(), frame.height());
+    } else {
+        LOG_WARN("Failed to save frame to: {}", filePath.toStdString());
+    }
+    
+    return success;
 }
 
 } // namespace quickdesk

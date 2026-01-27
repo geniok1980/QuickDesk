@@ -2,16 +2,25 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 import QuickDesk 1.0
 
 import "qml"
+import "qml/component"
 
 ApplicationWindow {
     id: root
-    width: 900
-    height: 600
+    width: 1200
+    height: 800
     visible: true
     title: "QuickDesk - 远程桌面"
+    
+    // Current active connection for video display
+    property string activeVideoConnectionId: ""
+    property bool showVideoMode: false
+    
+    // Counter to force refresh connection list UI when state changes
+    property int connectionStateVersion: 0
 
     //Example {}
 
@@ -436,17 +445,93 @@ ApplicationWindow {
                 }
             }
 
-            // Right panel - Client controls
+            // Right panel - Client controls / Video display
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 color: "#FAFAFA"
                 radius: 10
 
+                // Video mode - show remote desktop
+                Item {
+                    id: videoModePanel
+                    anchors.fill: parent
+                    visible: root.showVideoMode && root.activeVideoConnectionId !== ""
+                    
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 10
+                        
+                        // Video header with back button
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+                            
+                            Button {
+                                text: "← 返回"
+                                font.pixelSize: 12
+                                onClicked: {
+                                    root.showVideoMode = false
+                                }
+                            }
+                            
+                            Text {
+                                text: "远程桌面: " + root.activeVideoConnectionId
+                                font.pixelSize: 14
+                                font.bold: true
+                                color: "#333"
+                                Layout.fillWidth: true
+                            }
+                            
+                            // FPS display
+                            Text {
+                                text: remoteDesktopView.frameRate + " FPS"
+                                font.pixelSize: 12
+                                font.family: "Consolas"
+                                color: remoteDesktopView.frameRate >= 30 ? "#4CAF50" : 
+                                       remoteDesktopView.frameRate >= 15 ? "#FF9800" : "#F44336"
+                                visible: remoteDesktopView.hasVideo
+                            }
+                            
+                            // Resolution display
+                            Text {
+                                text: remoteDesktopView.frameWidth + "x" + remoteDesktopView.frameHeight
+                                font.pixelSize: 12
+                                color: "#666"
+                                visible: remoteDesktopView.hasVideo
+                            }
+                            
+                            Button {
+                                text: "断开连接"
+                                font.pixelSize: 12
+                                onClicked: {
+                                    mainController.disconnectFromRemoteHost(root.activeVideoConnectionId)
+                                    root.showVideoMode = false
+                                    root.activeVideoConnectionId = ""
+                                }
+                            }
+                        }
+                        
+                        // Remote desktop video
+                        RemoteDesktopView {
+                            id: remoteDesktopView
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            connectionId: root.activeVideoConnectionId
+                            clientManager: mainController.clientManager
+                            active: root.showVideoMode && visible
+                        }
+                    }
+                }
+
+                // Connection mode - show connection controls
                 ColumnLayout {
+                    id: connectionModePanel
                     anchors.fill: parent
                     anchors.margins: 15
                     spacing: 15
+                    visible: !root.showVideoMode
 
                     Text {
                         text: "连接远程主机"
@@ -568,8 +653,22 @@ ApplicationWindow {
                             delegate: Rectangle {
                                 width: connectionList.width
                                 height: 50
-                                color: "#F5F5F5"
+                                color: modelData === root.activeVideoConnectionId ? "#E3F2FD" : "#F5F5F5"
                                 radius: 6
+                                border.color: modelData === root.activeVideoConnectionId ? "#2196F3" : "transparent"
+                                border.width: 1
+                                
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onDoubleClicked: {
+                                        // Double-click to view video
+                                        var state = mainController.clientManager.getConnectionState(modelData)
+                                        if (state === "已连接") {
+                                            root.activeVideoConnectionId = modelData
+                                            root.showVideoMode = true
+                                        }
+                                    }
+                                }
                                 
                                 RowLayout {
                                     anchors.fill: parent
@@ -589,9 +688,32 @@ ApplicationWindow {
                                         }
                                         
                                         Text {
+                                            // Use connectionStateVersion to force refresh
+                                            property int _refresh: root.connectionStateVersion
                                             text: mainController.clientManager.getConnectionState(modelData) || "连接中..."
                                             font.pixelSize: 11
-                                            color: "#666"
+                                            color: {
+                                                var _ = root.connectionStateVersion  // Dependency for refresh
+                                                var state = mainController.clientManager.getConnectionState(modelData)
+                                                return state === "已连接" ? "#4CAF50" : "#666"
+                                            }
+                                        }
+                                    }
+                                    
+                                    // View button
+                                    Button {
+                                        text: "查看"
+                                        font.pixelSize: 11
+                                        // Use connectionStateVersion to force refresh
+                                        enabled: {
+                                            var _ = root.connectionStateVersion  // Dependency for refresh
+                                            var state = mainController.clientManager.getConnectionState(modelData)
+                                            return state === "已连接"
+                                        }
+                                        onClicked: {
+                                            console.log("Viewing:", modelData)
+                                            root.activeVideoConnectionId = modelData
+                                            root.showVideoMode = true
                                         }
                                     }
                                     
@@ -602,6 +724,10 @@ ApplicationWindow {
                                         onClicked: {
                                             console.log("Disconnecting:", modelData)
                                             mainController.disconnectFromRemoteHost(modelData)
+                                            if (modelData === root.activeVideoConnectionId) {
+                                                root.showVideoMode = false
+                                                root.activeVideoConnectionId = ""
+                                            }
                                         }
                                     }
                                 }
@@ -657,6 +783,22 @@ ApplicationWindow {
             if (!success) {
                 toast.show("刷新失败: " + errorMessage)
             }
+        }
+    }
+    
+    // Connect to client connection state changes to refresh UI
+    Connections {
+        target: mainController.clientManager
+        
+        function onConnectionStateChanged(connectionId, state, hostInfo) {
+            console.log("Connection state changed:", connectionId, "->", state)
+            // Increment version to force UI refresh
+            root.connectionStateVersion++
+        }
+        
+        function onConnectionListChanged() {
+            // Force UI refresh when connection list changes
+            root.connectionStateVersion++
         }
     }
 }

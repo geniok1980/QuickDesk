@@ -9,6 +9,9 @@
 #include <QList>
 #include <QMap>
 #include <QStringList>
+#include <memory>
+
+#include "SharedMemoryManager.h"
 
 namespace quickdesk {
 
@@ -36,6 +39,7 @@ class ClientManager : public QObject {
     Q_PROPERTY(QString activeConnectionId READ activeConnectionId 
                WRITE setActiveConnectionId NOTIFY activeConnectionChanged)
     Q_PROPERTY(QStringList connectionIds READ connectionIds NOTIFY connectionListChanged)
+    Q_PROPERTY(SharedMemoryManager* sharedMemoryManager READ sharedMemoryManager CONSTANT)
 
 public:
     explicit ClientManager(QObject* parent = nullptr);
@@ -72,6 +76,13 @@ public:
     QStringList connectionIds() const;
     Q_INVOKABLE QString getConnectionState(const QString& connectionId) const;
 
+    // Shared memory access
+    SharedMemoryManager* sharedMemoryManager() const { return m_sharedMemoryManager.get(); }
+
+    // Frame testing - save current frame to file (for debugging)
+    Q_INVOKABLE bool saveFrameToFile(const QString& connectionId, 
+                                     const QString& filePath);
+
 signals:
     void connectionCountChanged();
     void activeConnectionChanged();
@@ -95,6 +106,7 @@ private slots:
 
 private:
     NativeMessaging* m_messaging = nullptr;
+    std::unique_ptr<SharedMemoryManager> m_sharedMemoryManager;
     QMap<QString, ConnectionInfo> m_connections;
     QString m_activeConnectionId;
     int m_connectionCounter = 0;

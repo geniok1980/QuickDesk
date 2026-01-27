@@ -17,6 +17,8 @@
 #include "manager/ServerManager.h"
 #include "manager/HostManager.h"
 #include "manager/ClientManager.h"
+#include "manager/SharedMemoryManager.h"
+#include "component/VideoFrameProvider.h"
 
 int main(int argc, char *argv[])
 {
@@ -51,6 +53,9 @@ int main(int argc, char *argv[])
         "HostManager is accessed through MainController");
     qmlRegisterUncreatableType<quickdesk::ClientManager>("QuickDesk", 1, 0, "ClientManager",
         "ClientManager is accessed through MainController");
+    qmlRegisterUncreatableType<quickdesk::SharedMemoryManager>("QuickDesk", 1, 0, "SharedMemoryManager",
+        "SharedMemoryManager is accessed through ClientManager");
+    qmlRegisterType<quickdesk::VideoFrameProvider>("QuickDesk", 1, 0, "VideoFrameProvider");
 
     QQmlApplicationEngine engine;
     QFontDatabase::addApplicationFont(":/res/font/SegoeFluentIcons.ttf");
