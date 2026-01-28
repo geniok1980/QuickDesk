@@ -10,6 +10,7 @@ Item {
     property string connectionId: ""
     property var clientManager: null
     property var desktopView: null
+    property var videoInfo: null  // Video info including original resolution
     
     // Signals
     signal disconnectRequested(string connectionId)
@@ -175,11 +176,11 @@ Item {
                 var windowWidth = root.parent ? root.parent.width : 1920
                 var windowHeight = root.parent ? root.parent.height : 1080
                 
-                // Estimate submenu height (6 items + 1 separator + padding)
+                // Estimate submenu height (8 items + 1 separator + padding)
                 var itemHeight = Theme.buttonHeightMedium
                 var separatorHeight = 1 + Theme.spacingXSmall * 2
                 var menuPadding = Theme.spacingSmall
-                var estimatedSubmenuHeight = (6 * itemHeight) + separatorHeight + (menuPadding * 2) + (Theme.spacingXSmall * 6)
+                var estimatedSubmenuHeight = (8 * itemHeight) + separatorHeight + (menuPadding * 2) + (Theme.spacingXSmall * 8)
                 
                 // Calculate vertical position
                 // Resolution is the 3rd menu item (after Performance and a separator)
@@ -264,7 +265,7 @@ Item {
     QDMenu {
         id: resolutionMenu
         parent: root.parent
-        width: 180
+        width: 190
         
         // Close both menus when submenu closes
         onClosed: {
@@ -275,23 +276,52 @@ Item {
         
         QDMenuItem {
             text: {
-                var res = qsTr("Auto")
-                if (root.desktopView && root.desktopView.frameWidth > 0) {
-                    res += " (" + root.desktopView.frameWidth + "x" + root.desktopView.frameHeight + ")"
+                if (root.videoInfo && root.videoInfo.originalWidth > 0 && root.videoInfo.originalHeight > 0) {
+                    return qsTr("Original") + " (" + root.videoInfo.originalWidth + "x" + root.videoInfo.originalHeight + ")"
                 }
-                return res
+                return qsTr("Original")
             }
-            iconText: root.desktopView && root.desktopView.frameWidth > 0 ? FluentIconGlyph.acceptGlyph : ""
+            enabled: root.videoInfo && root.videoInfo.originalWidth > 0 && root.videoInfo.originalHeight > 0
             onTriggered: {
-                console.log("Set auto resolution for:", root.connectionId)
-                // Auto resolution - let host decide
+                // Restore to original resolution (first frame resolution)
+                if (root.videoInfo && root.videoInfo.originalWidth > 0 && root.videoInfo.originalHeight > 0 && root.clientManager) {
+                    console.log("Restore to original resolution:", root.videoInfo.originalWidth + "x" + root.videoInfo.originalHeight)
+                    root.clientManager.setResolution(
+                        root.connectionId, 
+                        root.videoInfo.originalWidth, 
+                        root.videoInfo.originalHeight, 
+                        96
+                    )
+                } else {
+                    console.log("Cannot restore to original: invalid resolution data. Width:", root.videoInfo ? root.videoInfo.originalWidth : "null", "Height:", root.videoInfo ? root.videoInfo.originalHeight : "null")
+                }
             }
         }
         
         QDMenuSeparator { }
         
         QDMenuItem {
-            text: "1920 x 1080"
+            text: "3840 x 2160 (4K)"
+            onTriggered: {
+                console.log("Set resolution 3840x2160 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 3840, 2160, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "2560 x 1440 (2K)"
+            onTriggered: {
+                console.log("Set resolution 2560x1440 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 2560, 1440, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "1920 x 1080 (FHD)"
             onTriggered: {
                 console.log("Set resolution 1920x1080 for:", root.connectionId)
                 if (root.clientManager) {

@@ -21,22 +21,47 @@ Window {
     property int currentTabIndex: 0
     
     // Video info stored separately to avoid triggering Repeater rebuild
-    // Map: connectionId -> {frameWidth, frameHeight, frameRate}
+    // Map: connectionId -> {frameWidth, frameHeight, frameRate, originalWidth, originalHeight}
     property var videoInfoMap: ({})
     property int videoInfoVersion: 0  // Increment to notify changes
     
     // Get video info for a connection
     function getVideoInfo(connectionId) {
-        return videoInfoMap[connectionId] || {frameWidth: 0, frameHeight: 0, frameRate: 0}
+        return videoInfoMap[connectionId] || {frameWidth: 0, frameHeight: 0, frameRate: 0, originalWidth: 0, originalHeight: 0}
     }
     
     // Update video info without modifying connections array
     function updateConnectionVideoInfo(connectionId, width, height, fps) {
+        // Validate input - must all be valid positive numbers
+        if (!connectionId || width <= 0 || height <= 0 || fps < 0) {
+            console.warn("Invalid video info update:", connectionId, width + "x" + height, fps + "fps")
+            return
+        }
+        
         var info = videoInfoMap[connectionId]
+        
+        // Record original resolution on first valid frame
+        var originalWidth = info ? info.originalWidth : 0
+        var originalHeight = info ? info.originalHeight : 0
+        
+        // Only record if both width and height are valid (> 0) and not yet recorded
+        if (!info || (info.originalWidth === 0 && width > 0 && height > 0)) {
+            // First frame with valid dimensions - record as original
+            originalWidth = width
+            originalHeight = height
+            console.log("✓ Recorded original resolution for", connectionId, ":", width + "x" + height)
+        }
+        
         // Only update if changed
         if (!info || info.frameWidth !== width || info.frameHeight !== height || info.frameRate !== fps) {
             var newMap = Object.assign({}, videoInfoMap)
-            newMap[connectionId] = {frameWidth: width, frameHeight: height, frameRate: fps}
+            newMap[connectionId] = {
+                frameWidth: width, 
+                frameHeight: height, 
+                frameRate: fps,
+                originalWidth: originalWidth,
+                originalHeight: originalHeight
+            }
             videoInfoMap = newMap
             videoInfoVersion++  // Notify tabs to refresh
         }
@@ -68,7 +93,7 @@ Window {
         
         // Initialize video info
         var newMap = Object.assign({}, videoInfoMap)
-        newMap[connectionId] = {frameWidth: 0, frameHeight: 0, frameRate: 0}
+        newMap[connectionId] = {frameWidth: 0, frameHeight: 0, frameRate: 0, originalWidth: 0, originalHeight: 0}
         videoInfoMap = newMap
         
         currentTabIndex = connections.length - 1
@@ -234,6 +259,12 @@ Window {
                 ? remoteWindow.connections[remoteWindow.currentTabIndex].id 
                 : ""
             clientManager: remoteWindow.clientManager
+            videoInfo: {
+                var connId = remoteWindow.currentTabIndex >= 0 && remoteWindow.currentTabIndex < remoteWindow.connections.length 
+                    ? remoteWindow.connections[remoteWindow.currentTabIndex].id 
+                    : ""
+                return connId ? remoteWindow.getVideoInfo(connId) : null
+            }
             desktopView: {
                 // Find the current desktop view
                 if (remoteWindow.currentTabIndex >= 0) {
