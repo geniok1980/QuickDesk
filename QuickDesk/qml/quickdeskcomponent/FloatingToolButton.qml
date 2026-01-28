@@ -164,10 +164,59 @@ Item {
         }
         
         QDMenuItem {
+            id: resolutionMenuItem
             text: qsTr("Resolution")
             iconText: FluentIconGlyph.resizeMouseMediumGlyph
+            hasSubmenu: true
             onTriggered: {
-                console.log("Show resolution for:", root.connectionId)
+                // Calculate smart submenu position
+                var parentMenu = floatingMenu
+                var submenu = resolutionMenu
+                var windowWidth = root.parent ? root.parent.width : 1920
+                var windowHeight = root.parent ? root.parent.height : 1080
+                
+                // Estimate submenu height (6 items + 1 separator + padding)
+                var itemHeight = Theme.buttonHeightMedium
+                var separatorHeight = 1 + Theme.spacingXSmall * 2
+                var menuPadding = Theme.spacingSmall
+                var estimatedSubmenuHeight = (6 * itemHeight) + separatorHeight + (menuPadding * 2) + (Theme.spacingXSmall * 6)
+                
+                // Calculate vertical position
+                // Resolution is the 3rd menu item (after Performance and a separator)
+                // Item 0: Ctrl+Alt+Del
+                // Item 1: Separator (small height)
+                // Item 2: Performance
+                // Item 3: Resolution (this item)
+                var itemOffsetInMenu = menuPadding + itemHeight + separatorHeight + itemHeight
+                var menuY = parentMenu.y + itemOffsetInMenu
+                
+                // Check if submenu would go off bottom
+                var spaceBottom = windowHeight - menuY
+                if (spaceBottom < estimatedSubmenuHeight) {
+                    // Adjust upward to fit, but align with parent menu if possible
+                    menuY = Math.max(Theme.spacingSmall, Math.min(menuY, windowHeight - estimatedSubmenuHeight - Theme.spacingSmall))
+                }
+                
+                // Calculate horizontal position
+                var rightX = parentMenu.x + parentMenu.width + Theme.spacingSmall
+                var spaceRight = windowWidth - rightX
+                
+                var menuX
+                if (spaceRight >= submenu.width + Theme.spacingSmall) {
+                    // Enough space on right - show on right side
+                    menuX = rightX
+                } else {
+                    // Not enough space on right - show on left side
+                    menuX = parentMenu.x - submenu.width - Theme.spacingSmall
+                    // Make sure it doesn't go off left edge
+                    if (menuX < Theme.spacingSmall) {
+                        menuX = Theme.spacingSmall
+                    }
+                }
+                
+                resolutionMenu.x = menuX
+                resolutionMenu.y = menuY
+                resolutionMenu.open()
             }
         }
         
@@ -207,6 +256,87 @@ Item {
                 console.log("Disconnect connection:", root.connectionId)
                 // Emit signal to let RemoteWindow handle both disconnect and tab removal
                 root.disconnectRequested(root.connectionId)
+            }
+        }
+    }
+    
+    // Resolution submenu
+    QDMenu {
+        id: resolutionMenu
+        parent: root.parent
+        width: 180
+        
+        // Close both menus when submenu closes
+        onClosed: {
+            if (floatingMenu.opened) {
+                floatingMenu.close()
+            }
+        }
+        
+        QDMenuItem {
+            text: {
+                var res = qsTr("Auto")
+                if (root.desktopView && root.desktopView.frameWidth > 0) {
+                    res += " (" + root.desktopView.frameWidth + "x" + root.desktopView.frameHeight + ")"
+                }
+                return res
+            }
+            iconText: root.desktopView && root.desktopView.frameWidth > 0 ? FluentIconGlyph.acceptGlyph : ""
+            onTriggered: {
+                console.log("Set auto resolution for:", root.connectionId)
+                // Auto resolution - let host decide
+            }
+        }
+        
+        QDMenuSeparator { }
+        
+        QDMenuItem {
+            text: "1920 x 1080"
+            onTriggered: {
+                console.log("Set resolution 1920x1080 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 1920, 1080, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "1600 x 900"
+            onTriggered: {
+                console.log("Set resolution 1600x900 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 1600, 900, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "1366 x 768"
+            onTriggered: {
+                console.log("Set resolution 1366x768 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 1366, 768, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "1280 x 720"
+            onTriggered: {
+                console.log("Set resolution 1280x720 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 1280, 720, 96)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "1024 x 768"
+            onTriggered: {
+                console.log("Set resolution 1024x768 for:", root.connectionId)
+                if (root.clientManager) {
+                    root.clientManager.setResolution(root.connectionId, 1024, 768, 96)
+                }
             }
         }
     }

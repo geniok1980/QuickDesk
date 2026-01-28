@@ -20,6 +20,28 @@ Window {
     property var connections: [] // Array of connection objects: [{id, deviceId, name, ping, state}]
     property int currentTabIndex: 0
     
+    // Video info stored separately to avoid triggering Repeater rebuild
+    // Map: connectionId -> {frameWidth, frameHeight, frameRate}
+    property var videoInfoMap: ({})
+    property int videoInfoVersion: 0  // Increment to notify changes
+    
+    // Get video info for a connection
+    function getVideoInfo(connectionId) {
+        return videoInfoMap[connectionId] || {frameWidth: 0, frameHeight: 0, frameRate: 0}
+    }
+    
+    // Update video info without modifying connections array
+    function updateConnectionVideoInfo(connectionId, width, height, fps) {
+        var info = videoInfoMap[connectionId]
+        // Only update if changed
+        if (!info || info.frameWidth !== width || info.frameHeight !== height || info.frameRate !== fps) {
+            var newMap = Object.assign({}, videoInfoMap)
+            newMap[connectionId] = {frameWidth: width, frameHeight: height, frameRate: fps}
+            videoInfoMap = newMap
+            videoInfoVersion++  // Notify tabs to refresh
+        }
+    }
+    
     // Add connection to this window
     function addConnection(connectionId, deviceId) {
         // Check if connection already exists
@@ -43,6 +65,11 @@ Window {
         var newConnections = connections.slice()
         newConnections.push(conn)
         connections = newConnections
+        
+        // Initialize video info
+        var newMap = Object.assign({}, videoInfoMap)
+        newMap[connectionId] = {frameWidth: 0, frameHeight: 0, frameRate: 0}
+        videoInfoMap = newMap
         
         currentTabIndex = connections.length - 1
         console.log("Added connection to remote window:", connectionId, "Total tabs:", connections.length)
@@ -72,6 +99,11 @@ Window {
         if (index < 0 || index >= connections.length) return
         
         var connId = connections[index].id
+        
+        // Remove from video info map
+        var newMap = Object.assign({}, videoInfoMap)
+        delete newMap[connId]
+        videoInfoMap = newMap
         
         // Create new array to trigger property binding update
         var newConnections = connections.slice()
@@ -132,6 +164,8 @@ Window {
             Layout.fillWidth: true
             connections: remoteWindow.connections
             currentIndex: remoteWindow.currentTabIndex
+            videoInfoMap: remoteWindow.videoInfoMap
+            videoInfoVersion: remoteWindow.videoInfoVersion
             
             onTabClicked: function(index) {
                 remoteWindow.currentTabIndex = index
@@ -168,6 +202,17 @@ Window {
                         connectionId: modelData.id
                         clientManager: remoteWindow.clientManager
                         active: index === remoteWindow.currentTabIndex
+                        
+                        // Monitor video info changes
+                        onFrameWidthChanged: {
+                            remoteWindow.updateConnectionVideoInfo(modelData.id, frameWidth, frameHeight, frameRate)
+                        }
+                        onFrameHeightChanged: {
+                            remoteWindow.updateConnectionVideoInfo(modelData.id, frameWidth, frameHeight, frameRate)
+                        }
+                        onFrameRateChanged: {
+                            remoteWindow.updateConnectionVideoInfo(modelData.id, frameWidth, frameHeight, frameRate)
+                        }
                     }
                 }
             }

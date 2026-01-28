@@ -14,6 +14,7 @@ QtObject {
     property bool separator: false
     property bool visible: true
     property bool isDestructive: false  // Red text for destructive actions
+    property bool hasSubmenu: false  // If true, clicking won't close parent menu
     
     // ============ Signals ============
     

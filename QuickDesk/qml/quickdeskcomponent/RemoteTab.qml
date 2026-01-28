@@ -13,13 +13,16 @@ Rectangle {
     property int ping: 0
     property string connectionState: "connected" // connected, connecting, disconnected
     property bool isActive: false
+    property int frameWidth: 0
+    property int frameHeight: 0
+    property int frameRate: 0
     
     // Signals
     signal clicked()
     signal closeRequested()
     
     // Size
-    implicitWidth: 200
+    implicitWidth: 240
     implicitHeight: 40
     
     // Style
@@ -91,6 +94,15 @@ Rectangle {
                     font.family: Theme.fontFamilyMono
                     color: Theme.textSecondary
                     visible: connectionState === "connected"
+                }
+                
+                // Resolution and FPS Display
+                Text {
+                    text: frameWidth + "x" + frameHeight + " " + frameRate + "fps"
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.family: Theme.fontFamilyMono
+                    color: Theme.textSecondary
+                    visible: connectionState === "connected" && frameWidth > 0
                 }
                 
                 // Connecting Text

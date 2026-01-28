@@ -280,8 +280,10 @@ QString ClientManager::getConnectionState(const QString& connectionId) const
 void ClientManager::onMessageReceived(const QJsonObject& message)
 {
     QString type = message["type"].toString();
-    
-    LOG_DEBUG("Client received message: {}", type.toStdString());
+
+    if (type != "videoFrameReady") {
+        LOG_DEBUG("Client received message: {}", type.toStdString());
+    }
 
     if (type == "helloResponse") {
         handleHelloResponse(message);

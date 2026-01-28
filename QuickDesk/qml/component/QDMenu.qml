@@ -158,6 +158,9 @@ Controls.Popup {
                                 if (modelData && modelData.checkable === true) {
                                     w -= Theme.iconSizeSmall + Theme.spacingMedium
                                 }
+                                if (modelData && modelData.hasSubmenu === true) {
+                                    w -= Theme.iconSizeSmall + Theme.spacingMedium
+                                }
                                 return w
                             }
                             height: parent.height
@@ -180,6 +183,25 @@ Controls.Popup {
                                 ColorAnimation { duration: Theme.animationDurationFast }
                             }
                         }
+                        
+                        // Submenu indicator (right arrow)
+                        Item {
+                            width: Theme.iconSizeSmall
+                            height: parent.height
+                            visible: modelData && modelData.hasSubmenu === true
+                            
+                            Text {
+                                anchors.centerIn: parent
+                                text: FluentIconGlyph.chevronRightGlyph
+                                font.family: "Segoe Fluent Icons"
+                                font.pixelSize: Theme.iconSizeSmall
+                                color: menuItemArea.containsMouse ? Theme.primary : Theme.textSecondary
+                                
+                                Behavior on color {
+                                    ColorAnimation { duration: Theme.animationDurationFast }
+                                }
+                            }
+                        }
                     }
                     
                     MouseArea {
@@ -193,7 +215,10 @@ Controls.Popup {
                             if (modelData && modelData.triggered) {
                                 modelData.triggered()
                             }
-                            control.close()
+                            // Only close menu if item doesn't have submenu
+                            if (!modelData || !modelData.hasSubmenu) {
+                                control.close()
+                            }
                         }
                     }
                 }
