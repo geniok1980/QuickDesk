@@ -11,6 +11,9 @@ Item {
     property var clientManager: null
     property var desktopView: null
     
+    // Signals
+    signal disconnectRequested(string connectionId)
+    
     // Size - include extra space for shadow (shadow size is 12px on each side)
     width: 80
     height: 80
@@ -202,9 +205,8 @@ Item {
             isDestructive: true
             onTriggered: {
                 console.log("Disconnect connection:", root.connectionId)
-                if (root.clientManager) {
-                    root.clientManager.disconnectFromHost(root.connectionId)
-                }
+                // Emit signal to let RemoteWindow handle both disconnect and tab removal
+                root.disconnectRequested(root.connectionId)
             }
         }
     }

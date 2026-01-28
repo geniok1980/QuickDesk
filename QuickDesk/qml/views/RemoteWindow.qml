@@ -48,7 +48,26 @@ Window {
         console.log("Added connection to remote window:", connectionId, "Total tabs:", connections.length)
     }
     
-    // Remove connection from this window
+    // Close connection and remove tab (unified function for both scenarios)
+    function closeConnection(index) {
+        if (index < 0 || index >= connections.length) {
+            console.warn("closeConnection: invalid index", index)
+            return
+        }
+        
+        var connId = connections[index].id
+        console.log("Closing connection:", connId, "at index:", index)
+        
+        // 1. Disconnect from host
+        if (clientManager) {
+            clientManager.disconnectFromHost(connId)
+        }
+        
+        // 2. Remove the tab
+        removeConnection(index)
+    }
+    
+    // Remove connection from this window (internal helper)
     function removeConnection(index) {
         if (index < 0 || index >= connections.length) return
         
@@ -119,14 +138,7 @@ Window {
             }
             
             onTabCloseRequested: function(index) {
-                // Show confirmation dialog
-                var connId = remoteWindow.connections[index].id
-                
-                // Disconnect from host
-                if (remoteWindow.clientManager) {
-                    remoteWindow.clientManager.disconnectFromHost(connId)
-                }
-                remoteWindow.removeConnection(index)
+                remoteWindow.closeConnection(index)
             }
             
             onNewTabRequested: {
@@ -184,6 +196,18 @@ Window {
                     return stackItem ? stackItem.children[0] : null
                 }
                 return null
+            }
+            
+            onDisconnectRequested: function(connectionId) {
+                console.log("FloatingToolButton disconnect requested for:", connectionId)
+                
+                // Find the connection index and close it
+                for (var i = 0; i < remoteWindow.connections.length; i++) {
+                    if (remoteWindow.connections[i].id === connectionId) {
+                        remoteWindow.closeConnection(i)
+                        break
+                    }
+                }
             }
         }
     }
