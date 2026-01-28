@@ -24,7 +24,7 @@ Rectangle {
     border.width: Theme.borderWidthThin
     border.color: Theme.border
     
-    implicitHeight: 50
+    implicitHeight: 60
     
     RowLayout {
         anchors.fill: parent
@@ -75,49 +75,6 @@ Rectangle {
             ScrollBar.horizontal: ScrollBar {
                 policy: ScrollBar.AsNeeded
             }
-        }
-        
-        // Separator
-        Rectangle {
-            width: 1
-            Layout.fillHeight: true
-            color: Theme.border
-        }
-        
-        // New Tab Button
-        Rectangle {
-            width: 40
-            height: 40
-            radius: Theme.radiusMedium
-            color: newTabArea.containsMouse ? Theme.surfaceHover : "transparent"
-            
-            Behavior on color {
-                ColorAnimation { duration: Theme.animationDurationFast }
-            }
-            
-            Text {
-                anchors.centerIn: parent
-                text: FluentIconGlyph.addGlyph
-                font.family: "Segoe Fluent Icons"
-                font.pixelSize: 16
-                color: Theme.text
-            }
-            
-            MouseArea {
-                id: newTabArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                
-                onClicked: {
-                    control.newTabRequested()
-                }
-            }
-            
-            QDToolTip {
-                visible: newTabArea.containsMouse
-                text: qsTr("New Connection")
-            }
-        }
+        }       
     }
 }

@@ -147,24 +147,6 @@ Item {
         width: 220
         
         QDMenuItem {
-            text: qsTr("Send Ctrl+Alt+Del")
-            iconText: FluentIconGlyph.keyboardFullGlyph
-            onTriggered: {
-                console.log("Send Ctrl+Alt+Del to:", root.connectionId)
-            }
-        }
-        
-        QDMenuSeparator { }
-        
-        QDMenuItem {
-            text: qsTr("Performance")
-            iconText: FluentIconGlyph.areaChartGlyph
-            onTriggered: {
-                console.log("Show performance for:", root.connectionId)
-            }
-        }
-        
-        QDMenuItem {
             id: resolutionMenuItem
             text: qsTr("Resolution")
             iconText: FluentIconGlyph.resizeMouseMediumGlyph
@@ -218,32 +200,6 @@ Item {
                 resolutionMenu.x = menuX
                 resolutionMenu.y = menuY
                 resolutionMenu.open()
-            }
-        }
-        
-        QDMenuItem {
-            text: qsTr("Quality")
-            iconText: FluentIconGlyph.colorGlyph
-            onTriggered: {
-                console.log("Show quality for:", root.connectionId)
-            }
-        }
-        
-        QDMenuSeparator { }
-        
-        QDMenuItem {
-            text: qsTr("Clipboard")
-            iconText: FluentIconGlyph.clipboardListGlyph
-            onTriggered: {
-                console.log("Show clipboard for:", root.connectionId)
-            }
-        }
-        
-        QDMenuItem {
-            text: qsTr("File Transfer")
-            iconText: FluentIconGlyph.folderGlyph
-            onTriggered: {
-                console.log("Open file transfer for:", root.connectionId)
             }
         }
         
