@@ -52,19 +52,20 @@ bool ProcessManager::startHostProcess()
     connect(m_hostProcess.get(), 
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &ProcessManager::onHostProcessFinished);
+    
+    connect(m_hostProcess.get(), &QProcess::started,
+            this, &ProcessManager::onHostProcessStarted);
+    
+    connect(m_hostProcess.get(), &QProcess::errorOccurred,
+            this, &ProcessManager::onHostProcessErrorOccurred);
 
+    setHostProcessStatus(ProcessStatus::Starting);
     if (!startProcess(m_hostProcess.get(), m_hostExePath, "Host", m_logDir)) {
         m_hostProcess.reset();
+        setHostProcessStatus(ProcessStatus::NotStarted);
         return false;
     }
 
-    // Create Native Messaging handler
-    m_hostMessaging = std::make_unique<NativeMessaging>(m_hostProcess.get(), this);
-    
-    setHostStatus("running");
-    emit hostProcessStarted();
-    LOG_INFO("Host process started, PID: {}", m_hostProcess->processId());
-    
     return true;
 }
 
@@ -85,19 +86,20 @@ bool ProcessManager::startClientProcess()
     connect(m_clientProcess.get(), 
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &ProcessManager::onClientProcessFinished);
+    
+    connect(m_clientProcess.get(), &QProcess::started,
+            this, &ProcessManager::onClientProcessStarted);
+    
+    connect(m_clientProcess.get(), &QProcess::errorOccurred,
+            this, &ProcessManager::onClientProcessErrorOccurred);
 
+    setClientProcessStatus(ProcessStatus::Starting);
     if (!startProcess(m_clientProcess.get(), m_clientExePath, "Client", m_logDir)) {
         m_clientProcess.reset();
+        setClientProcessStatus(ProcessStatus::NotStarted);
         return false;
     }
 
-    // Create Native Messaging handler
-    m_clientMessaging = std::make_unique<NativeMessaging>(m_clientProcess.get(), this);
-    
-    setClientStatus("running");
-    emit clientProcessStarted();
-    LOG_INFO("Client process started, PID: {}", m_clientProcess->processId());
-    
     return true;
 }
 
@@ -129,7 +131,7 @@ void ProcessManager::stopHostProcess()
     m_hostMessaging.reset();
     m_hostProcess.reset();
     m_hostRestartCount = 0;
-    setHostStatus("stopped");
+    setHostProcessStatus(ProcessStatus::NotStarted);
 }
 
 void ProcessManager::stopClientProcess()
@@ -160,7 +162,7 @@ void ProcessManager::stopClientProcess()
     m_clientMessaging.reset();
     m_clientProcess.reset();
     m_clientRestartCount = 0;
-    setClientStatus("stopped");
+    setClientProcessStatus(ProcessStatus::NotStarted);
 }
 
 void ProcessManager::stopAllProcesses()
@@ -263,14 +265,14 @@ void ProcessManager::setClientAutoRestart(bool enabled)
     }
 }
 
-QString ProcessManager::hostStatus() const
+ProcessStatus::Status ProcessManager::hostProcessStatus() const
 {
-    return m_hostStatus;
+    return m_hostProcessStatus;
 }
 
-QString ProcessManager::clientStatus() const
+ProcessStatus::Status ProcessManager::clientProcessStatus() const
 {
-    return m_clientStatus;
+    return m_clientProcessStatus;
 }
 
 void ProcessManager::resetHostRetryCount()
@@ -299,27 +301,27 @@ void ProcessManager::onHostProcessFinished(int exitCode, QProcess::ExitStatus st
     if (m_hostStoppingIntentionally) {
         // User requested stop, don't restart
         m_hostStoppingIntentionally = false;
-        setHostStatus("stopped");
+        setHostProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Host stopped intentionally, not restarting");
         return;
     }
     
     if (!m_hostAutoRestart) {
-        setHostStatus("stopped");
+        setHostProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Host auto-restart disabled");
         return;
     }
     
     if (!isAbnormalExit) {
         // Normal exit with code 0, don't restart
-        setHostStatus("stopped");
+        setHostProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Host exited normally, not restarting");
         return;
     }
     
     // Abnormal exit - try to restart
     if (m_hostRestartCount >= MAX_RESTART_ATTEMPTS) {
-        setHostStatus("failed");
+        setHostProcessStatus(ProcessStatus::Failed);
         QString error = QString("Host process crashed %1 times, giving up").arg(MAX_RESTART_ATTEMPTS);
         LOG_WARN("{}", error.toStdString());
         emit hostProcessError(error);
@@ -329,7 +331,7 @@ void ProcessManager::onHostProcessFinished(int exitCode, QProcess::ExitStatus st
     m_hostRestartCount++;
     int delay = calculateRestartDelay(m_hostRestartCount);
     
-    setHostStatus(QString("restarting:%1").arg(m_hostRestartCount));
+    setHostProcessStatus(ProcessStatus::Restarting);
     LOG_INFO("Host crashed, restarting in {} ms (attempt {} of {})", 
              delay, m_hostRestartCount, MAX_RESTART_ATTEMPTS);
     
@@ -353,27 +355,27 @@ void ProcessManager::onClientProcessFinished(int exitCode, QProcess::ExitStatus 
     if (m_clientStoppingIntentionally) {
         // User requested stop, don't restart
         m_clientStoppingIntentionally = false;
-        setClientStatus("stopped");
+        setClientProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Client stopped intentionally, not restarting");
         return;
     }
     
     if (!m_clientAutoRestart) {
-        setClientStatus("stopped");
+        setClientProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Client auto-restart disabled");
         return;
     }
     
     if (!isAbnormalExit) {
         // Normal exit with code 0, don't restart
-        setClientStatus("stopped");
+        setClientProcessStatus(ProcessStatus::NotStarted);
         LOG_INFO("Client exited normally, not restarting");
         return;
     }
     
     // Abnormal exit - try to restart
     if (m_clientRestartCount >= MAX_RESTART_ATTEMPTS) {
-        setClientStatus("failed");
+        setClientProcessStatus(ProcessStatus::Failed);
         QString error = QString("Client process crashed %1 times, giving up").arg(MAX_RESTART_ATTEMPTS);
         LOG_WARN("{}", error.toStdString());
         emit clientProcessError(error);
@@ -383,7 +385,7 @@ void ProcessManager::onClientProcessFinished(int exitCode, QProcess::ExitStatus 
     m_clientRestartCount++;
     int delay = calculateRestartDelay(m_clientRestartCount);
     
-    setClientStatus(QString("restarting:%1").arg(m_clientRestartCount));
+    setClientProcessStatus(ProcessStatus::Restarting);
     LOG_INFO("Client crashed, restarting in {} ms (attempt {} of {})",
              delay, m_clientRestartCount, MAX_RESTART_ATTEMPTS);
     
@@ -394,36 +396,106 @@ void ProcessManager::onClientProcessFinished(int exitCode, QProcess::ExitStatus 
 void ProcessManager::onHostRestartTimer()
 {
     LOG_INFO("Attempting to restart Host process...");
-    if (!startHostProcess()) {
-        // Failed to start, increment count and try again
-        if (m_hostRestartCount < MAX_RESTART_ATTEMPTS) {
-            m_hostRestartCount++;
-            int delay = calculateRestartDelay(m_hostRestartCount);
-            setHostStatus(QString("restarting:%1").arg(m_hostRestartCount));
-            emit hostProcessRestarting(m_hostRestartCount, MAX_RESTART_ATTEMPTS);
-            m_hostRestartTimer.start(delay);
-        } else {
-            setHostStatus("failed");
-            emit hostProcessError("Failed to restart Host after multiple attempts");
-        }
-    }
+    // startHostProcess now returns false only if exe path is not set or file doesn't exist
+    // Actual start failures are handled by errorOccurred signal
+    startHostProcess();
 }
 
 void ProcessManager::onClientRestartTimer()
 {
     LOG_INFO("Attempting to restart Client process...");
-    if (!startClientProcess()) {
-        // Failed to start, increment count and try again
-        if (m_clientRestartCount < MAX_RESTART_ATTEMPTS) {
-            m_clientRestartCount++;
-            int delay = calculateRestartDelay(m_clientRestartCount);
-            setClientStatus(QString("restarting:%1").arg(m_clientRestartCount));
-            emit clientProcessRestarting(m_clientRestartCount, MAX_RESTART_ATTEMPTS);
-            m_clientRestartTimer.start(delay);
+    // startClientProcess now returns false only if exe path is not set or file doesn't exist
+    // Actual start failures are handled by errorOccurred signal
+    startClientProcess();
+}
+
+void ProcessManager::onHostProcessStarted()
+{
+    // Create Native Messaging handler
+    m_hostMessaging = std::make_unique<NativeMessaging>(m_hostProcess.get(), this);
+    
+    setHostProcessStatus(ProcessStatus::Running);
+    emit hostProcessStarted();
+    LOG_INFO("Host process started successfully, PID: {}", m_hostProcess->processId());
+}
+
+void ProcessManager::onHostProcessErrorOccurred(QProcess::ProcessError error)
+{
+    QString errorString = m_hostProcess ? m_hostProcess->errorString() : "Unknown error";
+    LOG_WARN("Host process error occurred: {} - {}", error, errorString.toStdString());
+    
+    if (error == QProcess::FailedToStart) {
+        QString errorMsg = QString("Failed to start Host process: %1").arg(errorString);
+        emit hostProcessError(errorMsg);
+        
+        // Check if we're in auto-restart mode and should retry
+        if (m_hostAutoRestart && !m_hostStoppingIntentionally) {
+            if (m_hostRestartCount < MAX_RESTART_ATTEMPTS) {
+                m_hostRestartCount++;
+                int delay = calculateRestartDelay(m_hostRestartCount);
+                setHostProcessStatus(ProcessStatus::Restarting);
+                LOG_INFO("Host failed to start, retrying in {} ms (attempt {} of {})",
+                        delay, m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+                emit hostProcessRestarting(m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+                m_hostRestartTimer.start(delay);
+            } else {
+                setHostProcessStatus(ProcessStatus::Failed);
+                emit hostProcessError("Failed to start Host after multiple attempts");
+            }
         } else {
-            setClientStatus("failed");
-            emit clientProcessError("Failed to restart Client after multiple attempts");
+            setHostProcessStatus(ProcessStatus::NotStarted);
         }
+    } else if (error == QProcess::Crashed) {
+        LOG_WARN("Host process crashed");
+        // Will be handled by onHostProcessFinished
+    } else {
+        QString errorMsg = QString("Host process error: %1").arg(errorString);
+        emit hostProcessError(errorMsg);
+    }
+}
+
+void ProcessManager::onClientProcessStarted()
+{
+    // Create Native Messaging handler
+    m_clientMessaging = std::make_unique<NativeMessaging>(m_clientProcess.get(), this);
+    
+    setClientProcessStatus(ProcessStatus::Running);
+    emit clientProcessStarted();
+    LOG_INFO("Client process started successfully, PID: {}", m_clientProcess->processId());
+}
+
+void ProcessManager::onClientProcessErrorOccurred(QProcess::ProcessError error)
+{
+    QString errorString = m_clientProcess ? m_clientProcess->errorString() : "Unknown error";
+    LOG_WARN("Client process error occurred: {} - {}", error, errorString.toStdString());
+    
+    if (error == QProcess::FailedToStart) {
+        QString errorMsg = QString("Failed to start Client process: %1").arg(errorString);
+        emit clientProcessError(errorMsg);
+        
+        // Check if we're in auto-restart mode and should retry
+        if (m_clientAutoRestart && !m_clientStoppingIntentionally) {
+            if (m_clientRestartCount < MAX_RESTART_ATTEMPTS) {
+                m_clientRestartCount++;
+                int delay = calculateRestartDelay(m_clientRestartCount);
+                setClientProcessStatus(ProcessStatus::Restarting);
+                LOG_INFO("Client failed to start, retrying in {} ms (attempt {} of {})",
+                        delay, m_clientRestartCount, MAX_RESTART_ATTEMPTS);
+                emit clientProcessRestarting(m_clientRestartCount, MAX_RESTART_ATTEMPTS);
+                m_clientRestartTimer.start(delay);
+            } else {
+                setClientProcessStatus(ProcessStatus::Failed);
+                emit clientProcessError("Failed to start Client after multiple attempts");
+            }
+        } else {
+            setClientProcessStatus(ProcessStatus::NotStarted);
+        }
+    } else if (error == QProcess::Crashed) {
+        LOG_WARN("Client process crashed");
+        // Will be handled by onClientProcessFinished
+    } else {
+        QString errorMsg = QString("Client process error: %1").arg(errorString);
+        emit clientProcessError(errorMsg);
     }
 }
 
@@ -432,7 +504,7 @@ bool ProcessManager::startProcess(QProcess* process, const QString& exePath,
 {
     QFileInfo fileInfo(exePath);
     if (!fileInfo.exists() || !fileInfo.isExecutable()) {
-        QString error = QString("%1 executable not found: %2").arg(processName, exePath);
+        QString error = QString("%1 executable not found or not executable: %2").arg(processName, exePath);
         LOG_WARN("{}", error.toStdString());
         if (processName == "Host") {
             emit hostProcessError(error);
@@ -445,7 +517,7 @@ bool ProcessManager::startProcess(QProcess* process, const QString& exePath,
     connect(process, &QProcess::readyReadStandardError, this, [process, processName]() {
         QByteArray err = process->readAllStandardError();
         if (!err.isEmpty()) {
-            LOG_INFO("[ {}  stderr] {}", processName.toStdString(), err.toStdString());
+            LOG_INFO("[{} stderr] {}", processName.toStdString(), err.toStdString());
         }
     });
 
@@ -463,20 +535,8 @@ bool ProcessManager::startProcess(QProcess* process, const QString& exePath,
     // Native Messaging uses stdin/stdout
     process->setProcessChannelMode(QProcess::SeparateChannels);
     
+    LOG_INFO("Starting {} process: {}", processName.toStdString(), exePath.toStdString());
     process->start();
-    
-    if (!process->waitForStarted(5000)) {
-        QString error = QString("Failed to start %1 process: %2")
-                        .arg(processName, process->errorString());
-        LOG_WARN("{}", error.toStdString());
-        if (processName == "Host") {
-            emit hostProcessError(error);
-        } else {
-            emit clientProcessError(error);
-        }
-        return false;
-    }
-
     return true;
 }
 
@@ -521,19 +581,19 @@ int ProcessManager::calculateRestartDelay(int retryCount) const
     return qMin(delay, 32000);
 }
 
-void ProcessManager::setHostStatus(const QString& status)
+void ProcessManager::setHostProcessStatus(ProcessStatus::Status status)
 {
-    if (m_hostStatus != status) {
-        m_hostStatus = status;
-        emit hostStatusChanged();
+    if (m_hostProcessStatus != status) {
+        m_hostProcessStatus = status;
+        emit hostProcessStatusChanged();
     }
 }
 
-void ProcessManager::setClientStatus(const QString& status)
+void ProcessManager::setClientProcessStatus(ProcessStatus::Status status)
 {
-    if (m_clientStatus != status) {
-        m_clientStatus = status;
-        emit clientStatusChanged();
+    if (m_clientProcessStatus != status) {
+        m_clientProcessStatus = status;
+        emit clientProcessStatusChanged();
     }
 }
 

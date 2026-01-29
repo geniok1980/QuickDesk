@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <memory>
 
+#include "../common/ProcessStatus.h"
+
 namespace quickdesk {
 
 class NativeMessaging;
@@ -20,8 +22,8 @@ class ProcessManager : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool hostAutoRestart READ hostAutoRestart WRITE setHostAutoRestart NOTIFY hostAutoRestartChanged)
     Q_PROPERTY(bool clientAutoRestart READ clientAutoRestart WRITE setClientAutoRestart NOTIFY clientAutoRestartChanged)
-    Q_PROPERTY(QString hostStatus READ hostStatus NOTIFY hostStatusChanged)
-    Q_PROPERTY(QString clientStatus READ clientStatus NOTIFY clientStatusChanged)
+    Q_PROPERTY(ProcessStatus::Status hostProcessStatus READ hostProcessStatus NOTIFY hostProcessStatusChanged)
+    Q_PROPERTY(ProcessStatus::Status clientProcessStatus READ clientProcessStatus NOTIFY clientProcessStatusChanged)
 
 public:
     explicit ProcessManager(QObject* parent = nullptr);
@@ -61,9 +63,9 @@ public:
     bool clientAutoRestart() const;
     void setClientAutoRestart(bool enabled);
 
-    // Status
-    QString hostStatus() const;
-    QString clientStatus() const;
+    // Process status
+    ProcessStatus::Status hostProcessStatus() const;
+    ProcessStatus::Status clientProcessStatus() const;
 
     // Reset retry counts (call after successful connection)
     void resetHostRetryCount();
@@ -75,18 +77,22 @@ signals:
     void hostProcessError(const QString& error);
     void hostProcessRestarting(int retryCount, int maxRetries);
     void hostAutoRestartChanged();
-    void hostStatusChanged();
+    void hostProcessStatusChanged();
 
     void clientProcessStarted();
     void clientProcessStopped(int exitCode);
     void clientProcessError(const QString& error);
     void clientProcessRestarting(int retryCount, int maxRetries);
     void clientAutoRestartChanged();
-    void clientStatusChanged();
+    void clientProcessStatusChanged();
 
 private slots:
     void onHostProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onClientProcessFinished(int exitCode, QProcess::ExitStatus status);
+    void onHostProcessStarted();
+    void onHostProcessErrorOccurred(QProcess::ProcessError error);
+    void onClientProcessStarted();
+    void onClientProcessErrorOccurred(QProcess::ProcessError error);
     void onHostRestartTimer();
     void onClientRestartTimer();
 
@@ -111,20 +117,20 @@ private:
     int m_hostRestartCount = 0;
     bool m_hostStoppingIntentionally = false;
     QTimer m_hostRestartTimer;
-    QString m_hostStatus = "stopped";
+    ProcessStatus::Status m_hostProcessStatus = ProcessStatus::NotStarted;
 
     // Client restart state
     int m_clientRestartCount = 0;
     bool m_clientStoppingIntentionally = false;
     QTimer m_clientRestartTimer;
-    QString m_clientStatus = "stopped";
+    ProcessStatus::Status m_clientProcessStatus = ProcessStatus::NotStarted;
 
     bool startProcess(QProcess* process, const QString& exePath, 
                       const QString& processName, const QString& logDir);
     QString findExecutable(const QString& name);
     int calculateRestartDelay(int retryCount) const;
-    void setHostStatus(const QString &status);
-    void setClientStatus(const QString &status);
+    void setHostProcessStatus(ProcessStatus::Status status);
+    void setClientProcessStatus(ProcessStatus::Status status);
 };
 
 } // namespace quickdesk

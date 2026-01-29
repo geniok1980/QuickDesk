@@ -29,8 +29,8 @@ MainController::MainController(QObject* parent)
             this, &MainController::onHostProcessError);
     connect(m_processManager.get(), &ProcessManager::hostProcessRestarting,
             this, &MainController::onHostProcessRestarting);
-    connect(m_processManager.get(), &ProcessManager::hostStatusChanged,
-            this, &MainController::onHostStatusChanged);
+    connect(m_processManager.get(), &ProcessManager::hostProcessStatusChanged,
+            this, &MainController::hostProcessStatusChanged);
     
     connect(m_processManager.get(), &ProcessManager::clientProcessStarted,
             this, &MainController::onClientProcessStarted);
@@ -40,8 +40,8 @@ MainController::MainController(QObject* parent)
             this, &MainController::onClientProcessError);
     connect(m_processManager.get(), &ProcessManager::clientProcessRestarting,
             this, &MainController::onClientProcessRestarting);
-    connect(m_processManager.get(), &ProcessManager::clientStatusChanged,
-            this, &MainController::onClientStatusChanged);
+    connect(m_processManager.get(), &ProcessManager::clientProcessStatusChanged,
+            this, &MainController::clientProcessStatusChanged);
 
     // Connect HostManager signals
     connect(m_hostManager.get(), &HostManager::hostReady,
@@ -149,12 +149,6 @@ void MainController::initialize()
 {
     LOG_INFO("MainController::initialize()");
     
-    // Set host and client process status to Starting
-    m_hostProcessStatus = ProcessStatus::Starting;
-    m_clientProcessStatus = ProcessStatus::Starting;
-    emit hostProcessStatusChanged();
-    emit clientProcessStatusChanged();
-
     // Auto-detect executable paths
     if (!m_processManager->autoDetectPaths()) {
         LOG_WARN("Could not auto-detect all executable paths");
@@ -164,20 +158,14 @@ void MainController::initialize()
     QString logDir = infra::ApplicationContext::instance().applicationDirPath();
     m_processManager->setLogDir(logDir);
 
-    // Start Host process
+    // Start Host process (status will be managed by ProcessManager)
     if (!m_processManager->startHostProcess()) {
-        m_hostProcessStatus = ProcessStatus::Failed;
-        emit hostProcessStatusChanged();
         emit initializationFailed("Failed to start Host process");
-        return;
     }
 
-    // Start Client process
+    // Start Client process (status will be managed by ProcessManager)
     if (!m_processManager->startClientProcess()) {
-        m_clientProcessStatus = ProcessStatus::Failed;
-        emit clientProcessStatusChanged();
         emit initializationFailed("Failed to start Client process");
-        return;
     }
 }
 
@@ -331,7 +319,7 @@ QString MainController::signalingStatusText() const
 
 ProcessStatus::Status MainController::hostProcessStatus() const
 {
-    return m_hostProcessStatus;
+    return m_processManager->hostProcessStatus();
 }
 
 ServerStatus::Status MainController::hostServerStatus() const
@@ -341,7 +329,7 @@ ServerStatus::Status MainController::hostServerStatus() const
 
 ProcessStatus::Status MainController::clientProcessStatus() const
 {
-    return m_clientProcessStatus;
+    return m_processManager->clientProcessStatus();
 }
 
 ServerStatus::Status MainController::clientServerStatus() const
@@ -367,10 +355,6 @@ void MainController::onHostProcessStarted()
 {
     LOG_INFO("Host process started");
     
-    // Update status
-    m_hostProcessStatus = ProcessStatus::Running;
-    emit hostProcessStatusChanged();
-    
     // Reset retry count on successful start
     m_processManager->resetHostRetryCount();
     
@@ -382,7 +366,7 @@ void MainController::onHostProcessStarted()
         m_hostManager->sendHello();
         
         // Auto-connect to signaling server
-        QTimer::singleShot(1000, this, [this]() {
+        QTimer::singleShot(500, this, [this]() {
             // Update server status to Connecting
             m_hostServerStatus = ServerStatus::Connecting;
             emit hostServerStatusChanged();
@@ -408,10 +392,8 @@ void MainController::onHostProcessStopped(int exitCode)
 {
     LOG_INFO("Host process stopped with exit code: {}", exitCode);
     
-    // Update status
-    m_hostProcessStatus = ProcessStatus::NotStarted;
+    // Update server status
     m_hostServerStatus = ServerStatus::Disconnected;
-    emit hostProcessStatusChanged();
     emit hostServerStatusChanged();
     
     m_hostManager->setMessaging(nullptr);
@@ -425,35 +407,17 @@ void MainController::onHostProcessStopped(int exitCode)
 void MainController::onHostProcessError(const QString& error)
 {
     LOG_WARN("Host process error: {}", error.toStdString());
-    
-    // Update status
-    m_hostProcessStatus = ProcessStatus::Failed;
-    emit hostProcessStatusChanged();
-    
     emit initializationFailed(QString("Host error: %1").arg(error));
 }
 
 void MainController::onHostProcessRestarting(int retryCount, int maxRetries)
 {
     LOG_INFO("Host process restarting, attempt {} of {}", retryCount, maxRetries);
-    
-    // Update status
-    m_hostProcessStatus = ProcessStatus::Restarting;
-    emit hostProcessStatusChanged();
-}
-
-void MainController::onHostStatusChanged()
-{
-    emit hostProcessStatusChanged();
 }
 
 void MainController::onClientProcessStarted()
 {
     LOG_INFO("Client process started");
-    
-    // Update status
-    m_clientProcessStatus = ProcessStatus::Running;
-    emit clientProcessStatusChanged();
     
     // Reset retry count on successful start
     m_processManager->resetClientRetryCount();
@@ -471,10 +435,8 @@ void MainController::onClientProcessStopped(int exitCode)
 {
     LOG_INFO("Client process stopped with exit code: {}", exitCode);
     
-    // Update status
-    m_clientProcessStatus = ProcessStatus::NotStarted;
+    // Update server status
     m_clientServerStatus = ServerStatus::Disconnected;
-    emit clientProcessStatusChanged();
     emit clientServerStatusChanged();
     
     m_clientManager->setMessaging(nullptr);
@@ -483,26 +445,12 @@ void MainController::onClientProcessStopped(int exitCode)
 void MainController::onClientProcessError(const QString& error)
 {
     LOG_WARN("Client process error: {}", error.toStdString());
-    
-    // Update status
-    m_clientProcessStatus = ProcessStatus::Failed;
-    emit clientProcessStatusChanged();
-    
     emit initializationFailed(QString("Client error: %1").arg(error));
 }
 
 void MainController::onClientProcessRestarting(int retryCount, int maxRetries)
 {
     LOG_INFO("Client process restarting, attempt {} of {}", retryCount, maxRetries);
-    
-    // Update status
-    m_clientProcessStatus = ProcessStatus::Restarting;
-    emit clientProcessStatusChanged();
-}
-
-void MainController::onClientStatusChanged()
-{
-    emit clientProcessStatusChanged();
 }
 
 void MainController::onClientSignalingStateChanged(const QString& connectionId,

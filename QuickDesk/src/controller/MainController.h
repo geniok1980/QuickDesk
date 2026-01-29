@@ -143,13 +143,11 @@ private slots:
     void onHostProcessStopped(int exitCode);
     void onHostProcessError(const QString& error);
     void onHostProcessRestarting(int retryCount, int maxRetries);
-    void onHostStatusChanged();
     
     void onClientProcessStarted();
     void onClientProcessStopped(int exitCode);
     void onClientProcessError(const QString& error);
     void onClientProcessRestarting(int retryCount, int maxRetries);
-    void onClientStatusChanged();
     void onClientSignalingStateChanged(const QString& connectionId,
                                        const QString& state,
                                        int retryCount,
@@ -167,12 +165,8 @@ private:
     QString m_deviceId;
     QString m_accessCode;
     
-    // Host status
-    ProcessStatus::Status m_hostProcessStatus = ProcessStatus::NotStarted;
+    // Server status (managed by MainController)
     ServerStatus::Status m_hostServerStatus = ServerStatus::Disconnected;
-    
-    // Client status
-    ProcessStatus::Status m_clientProcessStatus = ProcessStatus::NotStarted;
     ServerStatus::Status m_clientServerStatus = ServerStatus::Disconnected;
     QString m_primaryConnectionId;  // Track primary connection for client signaling status
     
