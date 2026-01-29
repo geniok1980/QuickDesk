@@ -48,7 +48,7 @@ void HostManager::setMessaging(NativeMessaging* messaging)
     }
 }
 
-void HostManager::connectToServer(const QString& serverUrl)
+void HostManager::connectToServer(const QString& serverUrl, const QString& savedPassword)
 {
     if (!m_messaging || !m_messaging->isReady()) {
         emit errorOccurred("NOT_READY", "Host process is not ready");
@@ -59,8 +59,15 @@ void HostManager::connectToServer(const QString& serverUrl)
     message["type"] = "connect";
     // Only serverUrl is needed - Host will auto-generate deviceId and accessCode
     message["signalingServerUrl"] = serverUrl;
+    
+    // If savedPassword is provided (never refresh mode), include it
+    if (!savedPassword.isEmpty()) {
+        message["password"] = savedPassword;
+        LOG_INFO("Sending connect message with saved password: {}", savedPassword.toStdString());
+    } else {
+        LOG_INFO("Sending connect message to host, serverUrl: {}", serverUrl.toStdString());
+    }
 
-    LOG_INFO("Sending connect message to host, serverUrl: {}", serverUrl.toStdString());
     m_messaging->sendMessage(message);
 }
 
@@ -139,27 +146,6 @@ void HostManager::refreshTempPassword()
 
     QJsonObject message;
     message["type"] = "refreshTempPassword";
-    m_messaging->sendMessage(message);
-}
-
-void HostManager::setTempPassword(const QString& password)
-{
-    if (!m_messaging || !m_messaging->isReady()) {
-        LOG_WARN("Cannot set temp password: host process not ready");
-        return;
-    }
-
-    // Check if connected to signaling server
-    if (m_signalingState != "connected") {
-        LOG_WARN("Cannot set temp password: not connected to signaling server");
-        return;
-    }
-
-    QJsonObject message;
-    message["type"] = "setTempPassword";
-    message["password"] = password;
-    
-    LOG_INFO("Setting temporary password: {}", password.toStdString());
     m_messaging->sendMessage(message);
 }
 

@@ -134,7 +134,19 @@ void MainController::startHosting(const QString& serverUrl)
     LOG_INFO("Starting hosting on: {}", url.toStdString());
     m_lastServerUrl = url;
     m_hostWasHosting = true;
-    m_hostManager->connectToServer(url);
+    
+    // Check if we should use saved password (never refresh mode)
+    int interval = core::LocalConfigCenter::instance().passwordRefreshInterval();
+    QString savedPassword = core::LocalConfigCenter::instance().savedTempPassword();
+    
+    if (interval == -1 && !savedPassword.isEmpty()) {
+        // Pass saved password to host
+        LOG_INFO("Using saved password for 'never refresh' mode");
+        m_hostManager->connectToServer(url, savedPassword);
+    } else {
+        // Normal connection (host will generate new password)
+        m_hostManager->connectToServer(url, QString());
+    }
 }
 
 void MainController::stopHosting()
@@ -437,22 +449,14 @@ void MainController::onHostReady(const QString& deviceId, const QString& accessC
     m_deviceId = deviceId;
     m_accessCode = accessCode;
     
-    // Load password refresh interval from config and start timer
+    // Load password refresh interval from config
     m_passwordRefreshIntervalMinutes = core::LocalConfigCenter::instance().passwordRefreshInterval();
     LOG_INFO("Password refresh interval: {} minutes", m_passwordRefreshIntervalMinutes);
     
-    // Handle different refresh modes
+    // Save password for "never refresh" mode
     if (m_passwordRefreshIntervalMinutes == -1) {
-        // Never refresh mode - use saved password if available
-        QString savedPassword = core::LocalConfigCenter::instance().savedTempPassword();
-        if (!savedPassword.isEmpty()) {
-            LOG_INFO("Using saved temporary password (never refresh mode)");
-            m_hostManager->setTempPassword(savedPassword);
-        } else {
-            LOG_INFO("No saved password, generating new one for first time");
-            // First time - let host generate initial password
-            // It will be saved when temporaryPasswordChanged signal is emitted
-        }
+        core::LocalConfigCenter::instance().setSavedTempPassword(accessCode);
+        LOG_INFO("Saved password for 'never refresh' mode: {}", accessCode.toStdString());
     } else {
         // Auto-refresh enabled - start timer
         LOG_INFO("Starting password auto-refresh timer: {} minutes", m_passwordRefreshIntervalMinutes);
