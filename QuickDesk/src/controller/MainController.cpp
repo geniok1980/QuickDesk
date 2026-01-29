@@ -55,6 +55,13 @@ MainController::MainController(QObject* parent)
     connect(m_hostManager.get(), &HostManager::signalingStateChanged,
             this, &MainController::signalingStateChanged);
     
+    // Listen to temporary password changes to save when in "never refresh" mode
+    connect(m_hostManager.get(), &HostManager::temporaryPasswordChanged,
+            this, [this](const QString& newPassword) {
+        core::LocalConfigCenter::instance().setSavedTempPassword(newPassword);
+        LOG_INFO("Saved temporary password for 'never refresh' mode");
+    });
+    
     // Setup password auto-refresh timer
     connect(&m_passwordRefreshTimer, &QTimer::timeout,
             this, &MainController::onPasswordRefreshTimer);
@@ -429,13 +436,33 @@ void MainController::onHostReady(const QString& deviceId, const QString& accessC
     LOG_INFO("Host ready - Device ID: {} Access Code: {}", deviceId.toStdString(), accessCode.toStdString());
     m_deviceId = deviceId;
     m_accessCode = accessCode;
-    emit deviceIdChanged();
-    emit accessCodeChanged();
     
     // Load password refresh interval from config and start timer
     m_passwordRefreshIntervalMinutes = core::LocalConfigCenter::instance().passwordRefreshInterval();
-    LOG_INFO("Starting password auto-refresh timer: {} minutes", m_passwordRefreshIntervalMinutes);
-    updatePasswordRefreshTimer();
+    LOG_INFO("Password refresh interval: {} minutes", m_passwordRefreshIntervalMinutes);
+    
+    // Handle different refresh modes
+    if (m_passwordRefreshIntervalMinutes == -1) {
+        // Never refresh mode - use saved password if available
+        QString savedPassword = core::LocalConfigCenter::instance().savedTempPassword();
+        if (!savedPassword.isEmpty()) {
+            LOG_INFO("Using saved temporary password (never refresh mode)");
+            m_hostManager->setTempPassword(savedPassword);
+        } else {
+            LOG_INFO("No saved password, generating new one for first time");
+            // First time - let host generate initial password
+            // It will be saved when temporaryPasswordChanged signal is emitted
+        }
+    } else {
+        // Auto-refresh enabled - start timer
+        LOG_INFO("Starting password auto-refresh timer: {} minutes", m_passwordRefreshIntervalMinutes);
+        updatePasswordRefreshTimer();
+    }
+
+    QTimer::singleShot(0, this, [this]() {
+        emit deviceIdChanged();
+        emit accessCodeChanged();
+    });
 }
 
 void MainController::updateInitStatus(const QString& status)

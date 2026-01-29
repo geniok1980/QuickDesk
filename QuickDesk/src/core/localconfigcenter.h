@@ -32,6 +32,7 @@ public:
     LCC_FUNCTION_DEC_INT(darkTheme, DarkTheme, 1);  // 0=Light, 1=Dark, default=Dark
 
     LCC_FUNCTION_DEC_STRING(language, Language, "Auto");
+    LCC_FUNCTION_DEC_STRING(savedTempPassword, SavedTempPassword, "");  // Saved password for "never refresh" mode
 
 private:
     AppConfigDataBase* m_configDatabase = nullptr;

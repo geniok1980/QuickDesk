@@ -60,6 +60,7 @@ public:
     
     // Password management
     Q_INVOKABLE void refreshTempPassword();
+    Q_INVOKABLE void setTempPassword(const QString& password);
 
     // State getters
     QString deviceId() const;

@@ -142,6 +142,27 @@ void HostManager::refreshTempPassword()
     m_messaging->sendMessage(message);
 }
 
+void HostManager::setTempPassword(const QString& password)
+{
+    if (!m_messaging || !m_messaging->isReady()) {
+        LOG_WARN("Cannot set temp password: host process not ready");
+        return;
+    }
+
+    // Check if connected to signaling server
+    if (m_signalingState != "connected") {
+        LOG_WARN("Cannot set temp password: not connected to signaling server");
+        return;
+    }
+
+    QJsonObject message;
+    message["type"] = "setTempPassword";
+    message["password"] = password;
+    
+    LOG_INFO("Setting temporary password: {}", password.toStdString());
+    m_messaging->sendMessage(message);
+}
+
 QString HostManager::deviceId() const
 {
     return m_deviceId;
