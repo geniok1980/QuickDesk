@@ -12,8 +12,41 @@ Item {
     property var desktopView: null
     property var videoInfo: null  // Video info including original resolution
     
+    // Framerate boost modes
+    readonly property int boostModeOff: 0      // 关闭
+    readonly property int boostModeOffice: 1   // 办公模式（默认）
+    readonly property int boostModeGaming: 2   // 游戏模式
+    
+    // Current boost mode (per connection)
+    property int framerateBoostMode: boostModeOffice  // 默认办公模式
+    
+    // Target framerate options
+    property int targetFramerate: 30  // 默认30 FPS
+    
     // Signals
     signal disconnectRequested(string connectionId)
+    
+    // Apply framerate boost mode
+    function applyFramerateBoostMode(mode) {
+        if (!clientManager || !connectionId) {
+            return
+        }
+        
+        switch(mode) {
+            case boostModeOff:
+                console.log("FramerateBoost: Disabled for:", connectionId)
+                clientManager.setFramerateBoost(connectionId, false, 30, 300)
+                break
+            case boostModeOffice:
+                console.log("FramerateBoost: Office mode (30ms/300ms) for:", connectionId)
+                clientManager.setFramerateBoost(connectionId, true, 30, 300)
+                break
+            case boostModeGaming:
+                console.log("FramerateBoost: Gaming mode (15ms/500ms) for:", connectionId)
+                clientManager.setFramerateBoost(connectionId, true, 15, 500)
+                break
+        }
+    }
     
     // Size - include extra space for shadow (shadow size is 12px on each side)
     width: 80
@@ -146,6 +179,103 @@ Item {
         parent: root.parent
         width: 220
         
+        // Smart Boost submenu (帧率提升)
+        QDMenuItem {
+            id: smartBoostMenuItem
+            text: qsTr("Smart Boost")
+            iconText: FluentIconGlyph.lightningBoltGlyph
+            hasSubmenu: true
+            onTriggered: {
+                // Calculate smart submenu position
+                var parentMenu = floatingMenu
+                var submenu = smartBoostMenu
+                var windowWidth = root.parent ? root.parent.width : 1920
+                var windowHeight = root.parent ? root.parent.height : 1080
+                
+                // Estimate submenu height (3 items + padding)
+                var itemHeight = Theme.buttonHeightMedium
+                var menuPadding = Theme.spacingSmall
+                var estimatedSubmenuHeight = (3 * itemHeight) + (menuPadding * 2) + (Theme.spacingXSmall * 3)
+                
+                // Calculate vertical position - Smart Boost is the first menu item
+                var itemOffsetInMenu = menuPadding
+                var menuY = parentMenu.y + itemOffsetInMenu
+                
+                // Check if submenu would go off bottom
+                var spaceBottom = windowHeight - menuY
+                if (spaceBottom < estimatedSubmenuHeight) {
+                    menuY = Math.max(Theme.spacingSmall, Math.min(menuY, windowHeight - estimatedSubmenuHeight - Theme.spacingSmall))
+                }
+                
+                // Calculate horizontal position
+                var rightX = parentMenu.x + parentMenu.width + Theme.spacingSmall
+                var spaceRight = windowWidth - rightX
+                
+                var menuX
+                if (spaceRight >= submenu.width + Theme.spacingSmall) {
+                    menuX = rightX
+                } else {
+                    menuX = parentMenu.x - submenu.width - Theme.spacingSmall
+                    if (menuX < Theme.spacingSmall) {
+                        menuX = Theme.spacingSmall
+                    }
+                }
+                
+                smartBoostMenu.x = menuX
+                smartBoostMenu.y = menuY
+                smartBoostMenu.open()
+            }
+        }
+        
+        // Target Framerate submenu (基础帧率)
+        QDMenuItem {
+            id: framerateMenuItem
+            text: qsTr("Target Framerate")
+            iconText: FluentIconGlyph.speedHighGlyph
+            hasSubmenu: true
+            onTriggered: {
+                // Calculate smart submenu position
+                var parentMenu = floatingMenu
+                var submenu = framerateMenu
+                var windowWidth = root.parent ? root.parent.width : 1920
+                var windowHeight = root.parent ? root.parent.height : 1080
+                
+                // Estimate submenu height (4 items + padding)
+                var itemHeight = Theme.buttonHeightMedium
+                var menuPadding = Theme.spacingSmall
+                var estimatedSubmenuHeight = (4 * itemHeight) + (menuPadding * 2) + (Theme.spacingXSmall * 4)
+                
+                // Calculate vertical position - Framerate is the first menu item
+                var itemOffsetInMenu = menuPadding
+                var menuY = parentMenu.y + itemOffsetInMenu
+                
+                // Check if submenu would go off bottom
+                var spaceBottom = windowHeight - menuY
+                if (spaceBottom < estimatedSubmenuHeight) {
+                    menuY = Math.max(Theme.spacingSmall, Math.min(menuY, windowHeight - estimatedSubmenuHeight - Theme.spacingSmall))
+                }
+                
+                // Calculate horizontal position
+                var rightX = parentMenu.x + parentMenu.width + Theme.spacingSmall
+                var spaceRight = windowWidth - rightX
+                
+                var menuX
+                if (spaceRight >= submenu.width + Theme.spacingSmall) {
+                    menuX = rightX
+                } else {
+                    menuX = parentMenu.x - submenu.width - Theme.spacingSmall
+                    if (menuX < Theme.spacingSmall) {
+                        menuX = Theme.spacingSmall
+                    }
+                }
+                
+                framerateMenu.x = menuX
+                framerateMenu.y = menuY
+                framerateMenu.open()
+            }
+        }
+        
+        // Resolution submenu (分辨率)
         QDMenuItem {
             id: resolutionMenuItem
             text: qsTr("Resolution")
@@ -164,13 +294,8 @@ Item {
                 var menuPadding = Theme.spacingSmall
                 var estimatedSubmenuHeight = (8 * itemHeight) + separatorHeight + (menuPadding * 2) + (Theme.spacingXSmall * 8)
                 
-                // Calculate vertical position
-                // Resolution is the 3rd menu item (after Performance and a separator)
-                // Item 0: Ctrl+Alt+Del
-                // Item 1: Separator (small height)
-                // Item 2: Performance
-                // Item 3: Resolution (this item)
-                var itemOffsetInMenu = menuPadding + itemHeight + separatorHeight + itemHeight
+                // Calculate vertical position - Resolution is the 3rd menu item
+                var itemOffsetInMenu = menuPadding + itemHeight * 2
                 var menuY = parentMenu.y + itemOffsetInMenu
                 
                 // Check if submenu would go off bottom
@@ -213,6 +338,106 @@ Item {
                 console.log("Disconnect connection:", root.connectionId)
                 // Emit signal to let RemoteWindow handle both disconnect and tab removal
                 root.disconnectRequested(root.connectionId)
+            }
+        }
+    }
+    
+    // Smart Boost submenu (帧率提升模式)
+    QDMenu {
+        id: smartBoostMenu
+        parent: root.parent
+        width: 180
+        
+        // Close both menus when submenu closes
+        onClosed: {
+            if (floatingMenu.opened) {
+                floatingMenu.close()
+            }
+        }
+        
+        // Smart framerate boost modes
+        QDMenuItem {
+            text: qsTr("Off") + (root.framerateBoostMode === root.boostModeOff ? " ✓" : "")
+            iconText: FluentIconGlyph.cancelGlyph
+            onTriggered: {
+                root.framerateBoostMode = root.boostModeOff
+                root.applyFramerateBoostMode(root.boostModeOff)
+            }
+        }
+        
+        QDMenuItem {
+            text: qsTr("Office") + (root.framerateBoostMode === root.boostModeOffice ? " ✓" : "")
+            iconText: FluentIconGlyph.editGlyph
+            onTriggered: {
+                root.framerateBoostMode = root.boostModeOffice
+                root.applyFramerateBoostMode(root.boostModeOffice)
+            }
+        }
+        
+        QDMenuItem {
+            text: qsTr("Gaming") + (root.framerateBoostMode === root.boostModeGaming ? " ✓" : "")
+            iconText: FluentIconGlyph.gameGlyph
+            onTriggered: {
+                root.framerateBoostMode = root.boostModeGaming
+                root.applyFramerateBoostMode(root.boostModeGaming)
+            }
+        }
+    }
+    
+    // Target Framerate submenu (基础帧率设置)
+    QDMenu {
+        id: framerateMenu
+        parent: root.parent
+        width: 150
+        
+        // Close both menus when submenu closes
+        onClosed: {
+            if (floatingMenu.opened) {
+                floatingMenu.close()
+            }
+        }
+        
+        QDMenuItem {
+            text: "60 FPS" + (root.targetFramerate === 60 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set target framerate 60 FPS for:", root.connectionId)
+                root.targetFramerate = 60
+                if (root.clientManager) {
+                    root.clientManager.setTargetFramerate(root.connectionId, 60)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "30 FPS" + (root.targetFramerate === 30 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set target framerate 30 FPS for:", root.connectionId)
+                root.targetFramerate = 30
+                if (root.clientManager) {
+                    root.clientManager.setTargetFramerate(root.connectionId, 30)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "15 FPS" + (root.targetFramerate === 15 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set target framerate 15 FPS for:", root.connectionId)
+                root.targetFramerate = 15
+                if (root.clientManager) {
+                    root.clientManager.setTargetFramerate(root.connectionId, 15)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "5 FPS" + (root.targetFramerate === 5 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set target framerate 5 FPS for:", root.connectionId)
+                root.targetFramerate = 5
+                if (root.clientManager) {
+                    root.clientManager.setTargetFramerate(root.connectionId, 5)
+                }
             }
         }
     }

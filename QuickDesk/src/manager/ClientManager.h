@@ -77,6 +77,8 @@ public:
     // Video control
     Q_INVOKABLE void setTargetFramerate(const QString& connectionId, int framerate);
     Q_INVOKABLE void setResolution(const QString& connectionId, int width, int height, int dpi = 96);
+    Q_INVOKABLE void setFramerateBoost(const QString& connectionId, bool enabled, 
+                                       int captureIntervalMs = 30, int boostDurationMs = 300);
 
     // State getters
     int connectionCount() const;

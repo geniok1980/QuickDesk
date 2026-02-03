@@ -231,6 +231,30 @@ void ClientManager::setResolution(const QString& connectionId, int width, int he
     m_messaging->sendMessage(message);
 }
 
+void ClientManager::setFramerateBoost(const QString& connectionId, bool enabled, 
+                                      int captureIntervalMs, int boostDurationMs)
+{
+    if (!m_messaging || !m_messaging->isReady()) {
+        LOG_WARN("Cannot set framerate boost: messaging not ready");
+        return;
+    }
+
+    // Clamp to valid ranges
+    captureIntervalMs = qBound(10, captureIntervalMs, 1000);
+    boostDurationMs = qBound(100, boostDurationMs, 1000);
+
+    LOG_INFO("Setting framerate boost for {}: enabled={}, interval={}ms, duration={}ms", 
+             connectionId.toStdString(), enabled, captureIntervalMs, boostDurationMs);
+
+    QJsonObject message;
+    message["type"] = "setFramerateBoost";
+    message["connectionId"] = connectionId;
+    message["enabled"] = enabled;
+    message["captureIntervalMs"] = captureIntervalMs;
+    message["boostDurationMs"] = boostDurationMs;
+    m_messaging->sendMessage(message);
+}
+
 int ClientManager::connectionCount() const
 {
     return m_connections.size();
@@ -342,7 +366,7 @@ void ClientManager::onMessageReceived(const QJsonObject& message)
         handleDisconnectAllResponse(message);
     } else if (type == "cursorShapeChanged") {
         handleCursorShapeChanged(message);
-    } else if (type == "setFramerateResponse" || type == "setResolutionResponse") {
+    } else if (type == "setFramerateResponse" || type == "setResolutionResponse" || type == "setFramerateBoostResponse") {
         // Acknowledgement responses - just log success/failure
         bool success = message["success"].toBool();
         if (!success) {
