@@ -265,6 +265,31 @@ void ClientManager::setFramerateBoost(const QString& connectionId, bool enabled,
     m_messaging->sendMessage(message);
 }
 
+void ClientManager::setBitrate(const QString& connectionId, int minBitrateBps)
+{
+    if (!m_messaging || !m_messaging->isReady()) {
+        LOG_WARN("Cannot set bitrate: messaging not ready");
+        return;
+    }
+
+    // Validate bitrate (allow 0 to disable, or reasonable range)
+    if (minBitrateBps < 0) {
+        LOG_WARN("Invalid bitrate: {} (must be >= 0)", minBitrateBps);
+        return;
+    }
+
+    LOG_INFO("Setting bitrate for {}: {} MiB ({} bps)", 
+             connectionId.toStdString(), 
+             minBitrateBps / 1024.0 / 1024.0, 
+             minBitrateBps);
+
+    QJsonObject message;
+    message["type"] = "setBitrate";
+    message["connectionId"] = connectionId;
+    message["minBitrateBps"] = minBitrateBps;
+    m_messaging->sendMessage(message);
+}
+
 int ClientManager::connectionCount() const
 {
     return m_connections.size();
@@ -376,7 +401,7 @@ void ClientManager::onMessageReceived(const QJsonObject& message)
         handleDisconnectAllResponse(message);
     } else if (type == "cursorShapeChanged") {
         handleCursorShapeChanged(message);
-    } else if (type == "setFramerateResponse" || type == "setResolutionResponse" || type == "setFramerateBoostResponse") {
+    } else if (type == "setFramerateResponse" || type == "setResolutionResponse" || type == "setFramerateBoostResponse" || type == "setBitrateResponse") {
         // Acknowledgement responses - just log success/failure
         bool success = message["success"].toBool();
         if (!success) {

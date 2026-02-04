@@ -23,6 +23,9 @@ Item {
     // Target framerate options
     property int targetFramerate: 30  // 默认30 FPS
     
+    // Bitrate options (in bps, using 1024 as unit: 1 MiB = 1024*1024)
+    property int preferredMinBitrate: 10485760  // 默认10 MiB (10 * 1024 * 1024)
+    
     // Signals
     signal disconnectRequested(string connectionId)
     
@@ -328,6 +331,54 @@ Item {
             }
         }
         
+        // Bitrate submenu (码率)
+        QDMenuItem {
+            id: bitrateMenuItem
+            text: qsTr("Bitrate")
+            iconText: FluentIconGlyph.speedHighGlyph
+            hasSubmenu: true
+            onTriggered: {
+                // Calculate smart submenu position
+                var parentMenu = floatingMenu
+                var submenu = bitrateMenu
+                var windowWidth = root.parent ? root.parent.width : 1920
+                var windowHeight = root.parent ? root.parent.height : 1080
+                
+                // Estimate submenu height (5 items + padding)
+                var itemHeight = Theme.buttonHeightMedium
+                var menuPadding = Theme.spacingSmall
+                var estimatedSubmenuHeight = (5 * itemHeight) + (menuPadding * 2) + (Theme.spacingXSmall * 5)
+                
+                // Calculate vertical position - Bitrate is the 4th menu item
+                var itemOffsetInMenu = menuPadding + itemHeight * 3
+                var menuY = parentMenu.y + itemOffsetInMenu
+                
+                // Check if submenu would go off bottom
+                var spaceBottom = windowHeight - menuY
+                if (spaceBottom < estimatedSubmenuHeight) {
+                    menuY = Math.max(Theme.spacingSmall, Math.min(menuY, windowHeight - estimatedSubmenuHeight - Theme.spacingSmall))
+                }
+                
+                // Calculate horizontal position
+                var rightX = parentMenu.x + parentMenu.width + Theme.spacingSmall
+                var spaceRight = windowWidth - rightX
+                
+                var menuX
+                if (spaceRight >= submenu.width + Theme.spacingSmall) {
+                    menuX = rightX
+                } else {
+                    menuX = parentMenu.x - submenu.width - Theme.spacingSmall
+                    if (menuX < Theme.spacingSmall) {
+                        menuX = Theme.spacingSmall
+                    }
+                }
+                
+                bitrateMenu.x = menuX
+                bitrateMenu.y = menuY
+                bitrateMenu.open()
+            }
+        }
+        
         QDMenuSeparator { }
         
         QDMenuItem {
@@ -547,6 +598,75 @@ Item {
                 console.log("Set resolution 1024x768 for:", root.connectionId)
                 if (root.clientManager) {
                     root.clientManager.setResolution(root.connectionId, 1024, 768, 96)
+                }
+            }
+        }
+    }
+    
+    // Bitrate submenu
+    QDMenu {
+        id: bitrateMenu
+        parent: root.parent
+        width: 150
+        
+        // Close both menus when submenu closes
+        onClosed: {
+            if (floatingMenu.opened) {
+                floatingMenu.close()
+            }
+        }
+        
+        QDMenuItem {
+            text: "100 MiB" + (root.preferredMinBitrate === 104857600 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set bitrate 100 MiB for:", root.connectionId)
+                root.preferredMinBitrate = 104857600  // 100 * 1024 * 1024
+                if (root.clientManager) {
+                    root.clientManager.setBitrate(root.connectionId, 104857600)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "50 MiB" + (root.preferredMinBitrate === 52428800 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set bitrate 50 MiB for:", root.connectionId)
+                root.preferredMinBitrate = 52428800  // 50 * 1024 * 1024
+                if (root.clientManager) {
+                    root.clientManager.setBitrate(root.connectionId, 52428800)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "10 MiB" + (root.preferredMinBitrate === 10485760 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set bitrate 10 MiB for:", root.connectionId)
+                root.preferredMinBitrate = 10485760  // 10 * 1024 * 1024
+                if (root.clientManager) {
+                    root.clientManager.setBitrate(root.connectionId, 10485760)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "5 MiB" + (root.preferredMinBitrate === 5242880 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set bitrate 5 MiB for:", root.connectionId)
+                root.preferredMinBitrate = 5242880  // 5 * 1024 * 1024
+                if (root.clientManager) {
+                    root.clientManager.setBitrate(root.connectionId, 5242880)
+                }
+            }
+        }
+        
+        QDMenuItem {
+            text: "2 MiB" + (root.preferredMinBitrate === 2097152 ? " ✓" : "")
+            onTriggered: {
+                console.log("Set bitrate 2 MiB for:", root.connectionId)
+                root.preferredMinBitrate = 2097152  // 2 * 1024 * 1024
+                if (root.clientManager) {
+                    root.clientManager.setBitrate(root.connectionId, 2097152)
                 }
             }
         }

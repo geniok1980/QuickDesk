@@ -84,6 +84,7 @@ public:
     Q_INVOKABLE void setResolution(const QString& connectionId, int width, int height, int dpi = 96);
     Q_INVOKABLE void setFramerateBoost(const QString& connectionId, bool enabled, 
                                        int captureIntervalMs = 30, int boostDurationMs = 300);
+    Q_INVOKABLE void setBitrate(const QString& connectionId, int minBitrateBps);
 
     // State getters
     int connectionCount() const;
