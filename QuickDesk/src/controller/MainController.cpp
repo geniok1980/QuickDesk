@@ -164,7 +164,7 @@ void MainController::initialize()
     }
 
     // Set log directory from ApplicationContext
-    QString logDir = infra::ApplicationContext::instance().applicationDirPath();
+    QString logDir = infra::ApplicationContext::instance().logPath();
     m_processManager->setLogDir(logDir);
 
     // Start Host process (status will be managed by ProcessManager)
