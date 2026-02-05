@@ -76,6 +76,7 @@ public:
     
     // Get client info for display
     Q_INVOKABLE QString getClientUsername(const QString& clientId) const;
+    Q_INVOKABLE QString getClientDeviceId(const QString& clientId) const;
     Q_INVOKABLE QString getClientState(const QString& clientId) const;
     
     // Signaling state getters

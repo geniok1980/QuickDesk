@@ -100,6 +100,9 @@ public:
     Q_INVOKABLE int getSignalingRetryCount(const QString& connectionId) const;
     Q_INVOKABLE int getSignalingNextRetryIn(const QString& connectionId) const;
     Q_INVOKABLE QString getSignalingError(const QString& connectionId) const;
+    
+    // Get device ID for a connection
+    Q_INVOKABLE QString getConnectionDeviceId(const QString& connectionId) const;
 
     // Shared memory access
     SharedMemoryManager* sharedMemoryManager() const { return m_sharedMemoryManager.get(); }

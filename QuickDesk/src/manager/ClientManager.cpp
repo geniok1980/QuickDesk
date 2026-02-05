@@ -363,6 +363,14 @@ QString ClientManager::getSignalingError(const QString& connectionId) const
     return QString();
 }
 
+QString ClientManager::getConnectionDeviceId(const QString& connectionId) const
+{
+    if (m_connections.contains(connectionId)) {
+        return m_connections[connectionId].deviceId;
+    }
+    return QString();
+}
+
 void ClientManager::onMessageReceived(const QJsonObject& message)
 {
     QString type = message["type"].toString();

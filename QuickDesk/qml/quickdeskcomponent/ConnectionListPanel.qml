@@ -118,11 +118,12 @@ ColumnLayout {
                             Layout.fillWidth: true
                             text: {
                                 if (root.panelType === "clients") {
-                                    // 客户端：只显示用户名，去掉状态
-                                    return root.mainController.hostManager.getClientUsername(modelData) || modelData
+                                    // 客户端：显示 device_id (从 client_id 提取)
+                                    return root.mainController.hostManager.getClientDeviceId(modelData) || modelData
                                 } else {
-                                    // 远程连接：去掉 "Device: " 前缀
-                                    return modelData
+                                    // 远程连接：显示对端的 device_id
+                                    var deviceId = root.mainController.clientManager.getConnectionDeviceId(modelData)
+                                    return deviceId || modelData
                                 }
                             }
                             font.pixelSize: Theme.fontSizeMedium
