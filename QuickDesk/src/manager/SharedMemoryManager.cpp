@@ -1,6 +1,7 @@
 // Copyright 2026 QuickDesk Authors
 
 #include "SharedMemoryManager.h"
+#include "YUVPlanarVideoBuffer.h"
 #include "infra/log/log.h"
 
 namespace quickdesk {
@@ -100,89 +101,6 @@ bool SharedMemoryManager::isAttached(const QString& connectionId) const
     return it->second->sharedMemory && it->second->sharedMemory->isAttached();
 }
 
-QImage SharedMemoryManager::readFrame(const QString& connectionId)
-{
-    std::string key = connectionId.toStdString();
-    auto it = m_handles.find(key);
-    if (it == m_handles.end()) {
-        LOG_WARN("No shared memory handle for connection {}", 
-                 connectionId.toStdString());
-        return QImage();
-    }
-
-    auto& handle = it->second;
-    if (!handle->sharedMemory || !handle->sharedMemory->isAttached()) {
-        return QImage();
-    }
-
-    // Lock shared memory for reading
-    if (!handle->sharedMemory->lock()) {
-        LOG_WARN("Failed to lock shared memory for connection {}: {}",
-                 connectionId.toStdString(), 
-                 handle->sharedMemory->errorString().toStdString());
-        return QImage();
-    }
-
-    QImage result;
-    const void* data = handle->sharedMemory->constData();
-    
-    if (data) {
-        // Read header
-        const SharedFrameHeader* header = 
-            static_cast<const SharedFrameHeader*>(data);
-
-        // Validate magic number
-        if (header->magic != kSharedFrameMagic) {
-            LOG_WARN("Invalid magic number in shared memory for connection {}: 0x{:08X}",
-                     connectionId.toStdString(), header->magic);
-            emit frameReadError(connectionId, "Invalid magic number in shared memory");
-        } else if (header->version != kSharedFrameVersion) {
-            // Validate version
-            LOG_WARN("Unsupported version in shared memory for connection {}: {}",
-                     connectionId.toStdString(), header->version);
-            emit frameReadError(connectionId, 
-                                QString("Unsupported version: %1").arg(header->version));
-        } else {
-            // Update last frame index
-            handle->lastFrameIndex = header->frame_index;
-
-            quint32 width = header->width;
-            quint32 height = header->height;
-            quint32 dataSize = header->data_size;
-
-            // Validate dimensions
-            if (width == 0 || height == 0 || width > 8192 || height > 8192) {
-                LOG_WARN("Invalid frame dimensions for connection {}: {}x{}",
-                         connectionId.toStdString(), width, height);
-            } else {
-                // Validate data size
-                quint32 expectedSize = width * height * 4;
-                if (dataSize != expectedSize) {
-                    LOG_WARN("Data size mismatch for connection {}: {} vs expected {}",
-                             connectionId.toStdString(), dataSize, expectedSize);
-                } else {
-                    // Get pointer to frame data
-                    const uchar* frameData = static_cast<const uchar*>(data) + 
-                                             sizeof(SharedFrameHeader);
-
-                    // Create QImage from data
-                    // Format is BGRA, which maps to QImage::Format_ARGB32 on little-endian
-                    QImage image(frameData, static_cast<int>(width), static_cast<int>(height),
-                                 static_cast<int>(width * 4), QImage::Format_ARGB32);
-                    
-                    // Deep copy the image so it doesn't depend on shared memory
-                    result = image.copy();
-                }
-            }
-        }
-    }
-
-    // Unlock shared memory
-    handle->sharedMemory->unlock();
-
-    return result;
-}
-
 QVideoFrame SharedMemoryManager::readVideoFrame(const QString& connectionId)
 {
     std::string key = connectionId.toStdString();
@@ -220,38 +138,54 @@ QVideoFrame SharedMemoryManager::readVideoFrame(const QString& connectionId)
             quint32 width = header->width;
             quint32 height = header->height;
             quint32 dataSize = header->data_size;
-            quint32 expectedSize = width * height * 4;
+            SharedFrameFormat frameFormat = static_cast<SharedFrameFormat>(header->format);
 
-            if (width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
-                dataSize == expectedSize) {
-                
+            if (width > 0 && height > 0 && width <= 8192 && height <= 8192) {
                 const uchar* frameData = static_cast<const uchar*>(data) + 
                                          sizeof(SharedFrameHeader);
 
-                // Create QVideoFrame with BGRA format for GPU rendering
-                QVideoFrameFormat format(QSize(static_cast<int>(width), 
-                                               static_cast<int>(height)),
-                                        QVideoFrameFormat::Format_BGRA8888);
-                result = QVideoFrame(format);
+                // Read stride information from header
+                quint32 ySrcStride = header->y_stride;
+                quint32 uSrcStride = header->u_stride;
+                quint32 vSrcStride = header->v_stride;
                 
-                if (result.map(QVideoFrame::WriteOnly)) {
-                    uchar* destData = result.bits(0);
-                    int destStride = result.bytesPerLine(0);
-                    int srcStride = static_cast<int>(width * 4);
+                // Calculate expected data size with stride
+                quint32 expectedSize = ySrcStride * height + 
+                                      uSrcStride * (height / 2) + 
+                                      vSrcStride * (height / 2);
+                
+                if (dataSize == expectedSize) {
+                    // Create QVideoFrameFormat for YUV420P
+                    QVideoFrameFormat format(QSize(static_cast<int>(width), static_cast<int>(height)),
+                                            QVideoFrameFormat::Format_YUV420P);
                     
-                    // Copy line by line (handles stride differences)
-                    if (destStride == srcStride) {
-                        memcpy(destData, frameData, dataSize);
-                    } else {
-                        for (quint32 y = 0; y < height; ++y) {
-                            memcpy(destData + y * destStride,
-                                   frameData + y * srcStride,
-                                   srcStride);
-                        }
-                    }
-                    result.unmap();
+                    // 🚀 Use custom YUVPlanarVideoBuffer to control stride (Qt 6.8)
+                    auto planarBuffer = std::make_unique<YUVPlanarVideoBuffer>(format);
+                    
+                    // Y plane: Single copy with stride
+                    int sizeY = ySrcStride * height;
+                    planarBuffer->m_data[0] = QByteArray(reinterpret_cast<const char*>(frameData), sizeY);
+                    planarBuffer->m_bytesPerLine[0] = ySrcStride;
+                    
+                    // U plane: Single copy with stride
+                    const uchar* uSrc = frameData + ySrcStride * height;
+                    int sizeU = uSrcStride * (height / 2);
+                    planarBuffer->m_data[1] = QByteArray(reinterpret_cast<const char*>(uSrc), sizeU);
+                    planarBuffer->m_bytesPerLine[1] = uSrcStride;
+                    
+                    // V plane: Single copy with stride
+                    const uchar* vSrc = frameData + ySrcStride * height + uSrcStride * (height / 2);
+                    int sizeV = vSrcStride * (height / 2);
+                    planarBuffer->m_data[2] = QByteArray(reinterpret_cast<const char*>(vSrc), sizeV);
+                    planarBuffer->m_bytesPerLine[2] = vSrcStride;
+                    
+                    planarBuffer->m_planeCount = 3;
+                    
+                    // Create QVideoFrame with custom buffer (Qt 6.8 requires unique_ptr)
+                    result = QVideoFrame(std::move(planarBuffer));
                 } else {
-                    result = QVideoFrame();  // Failed to map
+                    LOG_WARN("YUV I420 data size mismatch for connection {}: {} vs expected {}",
+                             connectionId.toStdString(), dataSize, expectedSize);
                 }
             }
         }
@@ -312,7 +246,7 @@ FrameData SharedMemoryManager::lockFrame(const QString& connectionId)
     quint32 width = header->width;
     quint32 height = header->height;
     quint32 dataSize = header->data_size;
-    quint32 expectedSize = width * height * 4;
+    quint32 expectedSize = width * height + (width / 2) * (height / 2) * 2;  // YUV I420
 
     if (width == 0 || height == 0 || width > 8192 || height > 8192 ||
         dataSize != expectedSize) {
@@ -333,7 +267,6 @@ FrameData SharedMemoryManager::lockFrame(const QString& connectionId)
     frameData.format = static_cast<SharedFrameFormat>(header->format);
     frameData.data = static_cast<const uchar*>(data) + sizeof(SharedFrameHeader);
     frameData.dataSize = dataSize;
-    frameData.stride = width * 4;
 
     return frameData;
 }

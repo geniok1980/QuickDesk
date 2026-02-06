@@ -814,9 +814,18 @@ bool ClientManager::saveFrameToFile(const QString& connectionId,
         return false;
     }
     
-    QImage frame = m_sharedMemoryManager->readFrame(connectionId);
+    // Read YUV frame and convert to QImage for saving
+    QVideoFrame videoFrame = m_sharedMemoryManager->readVideoFrame(connectionId);
+    if (!videoFrame.isValid()) {
+        LOG_WARN("Cannot save frame: failed to read video frame for {}", 
+                 connectionId.toStdString());
+        return false;
+    }
+    
+    // Convert YUV frame to QImage
+    QImage frame = videoFrame.toImage();
     if (frame.isNull()) {
-        LOG_WARN("Cannot save frame: failed to read frame for {}", 
+        LOG_WARN("Cannot save frame: failed to convert video frame to image for {}", 
                  connectionId.toStdString());
         return false;
     }

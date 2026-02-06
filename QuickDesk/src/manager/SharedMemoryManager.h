@@ -22,11 +22,9 @@ constexpr quint32 kSharedFrameMagic = 0x51444656;
 // Current version of the shared frame header
 constexpr quint32 kSharedFrameVersion = 1;
 
-// Pixel format enumeration (must match C++ client)
+// Pixel format enumeration (I420 only, must match C++ client)
 enum class SharedFrameFormat : quint32 {
-    Unknown = 0,
-    BGRA = 1,  // Blue-Green-Red-Alpha (Windows default)
-    RGBA = 2,  // Red-Green-Blue-Alpha
+    I420 = 3,  // YUV I420 (Y plane + U plane + V plane) - GPU rendering
 };
 
 // Header structure for shared memory video frames (64 bytes)
@@ -37,11 +35,14 @@ struct SharedFrameHeader {
     quint32 version;      // Header version (kSharedFrameVersion)
     quint32 width;        // Frame width in pixels
     quint32 height;       // Frame height in pixels
-    quint32 format;       // Pixel format (SharedFrameFormat)
+    quint32 format;       // Pixel format (always SharedFrameFormat::I420)
     quint32 frame_index;  // Incrementing frame counter
     quint64 timestamp_us; // Frame timestamp in microseconds
-    quint32 data_size;    // Size of frame data in bytes
-    quint32 reserved[7];  // Reserved for future use
+    quint32 data_size;    // Size of YUV data in bytes (including stride padding)
+    quint32 y_stride;     // Y plane bytes per line (width + optional padding)
+    quint32 u_stride;     // U plane bytes per line (width/2 + optional padding)
+    quint32 v_stride;     // V plane bytes per line (width/2 + optional padding)
+    quint32 reserved[4];  // Reserved for future use
 };
 #pragma pack(pop)
 
@@ -49,8 +50,8 @@ static_assert(sizeof(SharedFrameHeader) == 64,
               "SharedFrameHeader must be exactly 64 bytes");
 
 /**
- * @brief Frame data structure for efficient GPU rendering
- * Contains raw frame data and metadata without copying
+ * @brief Frame data structure for efficient GPU rendering (YUV I420 only)
+ * Contains raw YUV frame data and metadata without copying
  */
 struct FrameData {
     bool valid = false;
@@ -58,10 +59,9 @@ struct FrameData {
     quint32 height = 0;
     quint32 frameIndex = 0;
     quint64 timestampUs = 0;
-    SharedFrameFormat format = SharedFrameFormat::Unknown;
-    const uchar* data = nullptr;  // Pointer to frame data (valid only while locked)
+    SharedFrameFormat format = SharedFrameFormat::I420;
+    const uchar* data = nullptr;  // Pointer to YUV data (valid only while locked)
     quint32 dataSize = 0;
-    quint32 stride = 0;  // Bytes per line (width * 4 for BGRA)
 };
 
 /**
@@ -119,15 +119,7 @@ public:
     bool isAttached(const QString& connectionId) const;
 
     /**
-     * @brief Read the current frame from shared memory (creates QImage copy)
-     * @param connectionId The connection identifier
-     * @return The frame as QImage, or null image if failed
-     * @note This method is less efficient, prefer readVideoFrame() for GPU rendering
-     */
-    QImage readFrame(const QString& connectionId);
-
-    /**
-     * @brief Read the current frame as QVideoFrame for GPU rendering
+     * @brief Read the current frame as QVideoFrame for GPU rendering (YUV I420)
      * @param connectionId The connection identifier
      * @return QVideoFrame ready for VideoOutput, or invalid frame if failed
      * @note This is the preferred method for efficient GPU rendering
