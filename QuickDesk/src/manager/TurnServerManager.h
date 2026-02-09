@@ -88,7 +88,7 @@ private:
     QJsonArray m_servers;  // User-configured servers only
     
     // Built-in TURN server (transparent to user)
-    static constexpr const char* BUILTIN_TURN_URL = "turn:115.190.196.189:3478";
+    static constexpr const char* BUILTIN_TURN_URL = "turn:turn.quickcoder.cc:3478";
     static constexpr const char* BUILTIN_TURN_USERNAME = "qfturn";
     static constexpr const char* BUILTIN_TURN_CREDENTIAL = "iunngalgag";
     
