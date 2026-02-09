@@ -23,6 +23,7 @@
 #include "component/KeycodeMapper.h"
 #include "component/CursorImageProvider.h"
 #include "viewmodel/configviewmodel.h"
+#include "viewmodel/connectionlistmodel.h"
 #include "language/languagemanage.h"
 #include "common/ProcessStatus.h"
 
@@ -72,6 +73,7 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<quickdesk::SharedMemoryManager>("QuickDesk", 1, 0, "SharedMemoryManager",
         "SharedMemoryManager is accessed through ClientManager");
     qmlRegisterType<quickdesk::VideoFrameProvider>("QuickDesk", 1, 0, "VideoFrameProvider");
+    qmlRegisterType<quickdesk::ConnectionListModel>("QuickDesk", 1, 0, "ConnectionListModel");
     
     // Register enums for QML
     qmlRegisterUncreatableType<quickdesk::ProcessStatus>("QuickDesk", 1, 0, "ProcessStatus",

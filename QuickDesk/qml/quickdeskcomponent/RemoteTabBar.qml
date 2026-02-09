@@ -9,7 +9,7 @@ Rectangle {
     id: control
     
     // Properties
-    property var connections: [] // Array of connection objects
+    property var connectionModel: null  // ConnectionListModel (C++ QAbstractListModel)
     property int currentIndex: 0
     property var performanceStatsMap: ({})
     property int statsVersion: 0  // Used to trigger updates
@@ -41,21 +41,23 @@ Rectangle {
             spacing: Theme.spacingSmall
             clip: true
             
-            model: control.connections
+            model: control.connectionModel
             
             delegate: RemoteTab {
                 required property int index
-                required property var modelData
+                required property string connectionId
+                required property string deviceId
+                required property string name
+                required property string state
                 
-                connectionId: modelData.id || ""
-                deviceName: modelData.name || modelData.deviceId || ""
-                connectionState: modelData.state || "connected"
+                deviceName: name || deviceId || ""
+                connectionState: state || "connected"
                 isActive: index === control.currentIndex
                 
                 // Get performance stats from map
                 property var stats: {
                     var _ = control.statsVersion  // Trigger update when version changes
-                    return control.performanceStatsMap[modelData.id] || {
+                    return control.performanceStatsMap[connectionId] || {
                         frameWidth: 0, 
                         frameHeight: 0, 
                         frameRate: 0,

@@ -66,6 +66,8 @@ source_group(core FILES ${CORE_SOURCES})
 set(VIEWMODEL_SOURCES
     src/viewmodel/configviewmodel.h
     src/viewmodel/configviewmodel.cpp
+    src/viewmodel/connectionlistmodel.h
+    src/viewmodel/connectionlistmodel.cpp
 )
 source_group(viewmodel FILES ${VIEWMODEL_SOURCES})
 
@@ -129,8 +131,7 @@ qt_add_executable(QuickDesk
 qt_add_qml_module(QuickDesk
     URI QuickDesk
     VERSION 1.0
-    QML_FILES 
-        qml/views/Main.qml
+    QML_FILES
         qml/views/MainEntry.qml
         qml/views/MainWindow.qml
         qml/views/RemoteWindow.qml

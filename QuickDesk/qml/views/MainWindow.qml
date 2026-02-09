@@ -96,15 +96,14 @@ ApplicationWindow {
         
         // Step 1: Check if RemoteWindow exists and has a connection to this device
         if (remoteWindow) {
-            for (var i = 0; i < remoteWindow.connections.length; i++) {
-                if (remoteWindow.connections[i].deviceId === deviceId) {
-                    console.log("Already connected to device:", deviceId, "- switching to existing tab:", i)
-                    remoteWindow.currentTabIndex = i
-                    remoteWindow.show()
-                    remoteWindow.raise()
-                    remoteWindow.requestActivate()
-                    return true
-                }
+            var idx = remoteWindow.connectionModel.indexOfDeviceId(deviceId)
+            if (idx >= 0) {
+                console.log("Already connected to device:", deviceId, "- switching to existing tab:", idx)
+                remoteWindow.currentTabIndex = idx
+                remoteWindow.show()
+                remoteWindow.raise()
+                remoteWindow.requestActivate()
+                return true
             }
         }
         
@@ -140,16 +139,14 @@ ApplicationWindow {
         
         // If RemoteWindow exists, check if connection is already there
         if (remoteWindow) {
-            // Search for existing connection
-            for (var j = 0; j < remoteWindow.connections.length; j++) {
-                if (remoteWindow.connections[j].id === connectionId) {
-                    console.log("Connection already in RemoteWindow, switching to tab:", j)
-                    remoteWindow.currentTabIndex = j
-                    remoteWindow.show()
-                    remoteWindow.raise()
-                    remoteWindow.requestActivate()
-                    return true
-                }
+            var idx = remoteWindow.connectionModel.indexOf(connectionId)
+            if (idx >= 0) {
+                console.log("Connection already in RemoteWindow, switching to tab:", idx)
+                remoteWindow.currentTabIndex = idx
+                remoteWindow.show()
+                remoteWindow.raise()
+                remoteWindow.requestActivate()
+                return true
             }
         }
         
@@ -209,13 +206,11 @@ ApplicationWindow {
         
         // If RemoteWindow exists, find the connection and close it properly
         if (remoteWindow) {
-            // Find the connection index
-            for (var i = 0; i < remoteWindow.connections.length; i++) {
-                if (remoteWindow.connections[i].id === connectionId) {
-                    console.log("Found connection at index:", i, "- calling RemoteWindow.closeConnection()")
-                    remoteWindow.closeConnection(i)
-                    return
-                }
+            var idx = remoteWindow.connectionModel.indexOf(connectionId)
+            if (idx >= 0) {
+                console.log("Found connection at index:", idx, "- calling RemoteWindow.closeConnection()")
+                remoteWindow.closeConnection(idx)
+                return
             }
             console.log("Connection not found in RemoteWindow, disconnecting directly")
         }        
@@ -317,11 +312,9 @@ ApplicationWindow {
                         // Try to get deviceId from existing connection in RemoteWindow
                         var deviceId = null
                         if (root.remoteWindow) {
-                            for (var i = 0; i < root.remoteWindow.connections.length; i++) {
-                                if (root.remoteWindow.connections[i].id === connectionId) {
-                                    deviceId = root.remoteWindow.connections[i].deviceId
-                                    break
-                                }
+                            var idx = root.remoteWindow.connectionModel.indexOf(connectionId)
+                            if (idx >= 0) {
+                                deviceId = root.remoteWindow.connectionModel.deviceIdAt(idx)
                             }
                         }
                         

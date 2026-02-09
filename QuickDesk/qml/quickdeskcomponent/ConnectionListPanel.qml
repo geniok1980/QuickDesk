@@ -154,7 +154,7 @@ ColumnLayout {
                         
                         // Disconnect button
                         QDIconButton {
-                            iconSource: FluentIconGlyph.cancelGlyph  // 使用 cancel 图标，类似 Main.qml 的"断开"
+                            iconSource: FluentIconGlyph.cancelGlyph
                             buttonStyle: QDIconButton.Style.Subtle
                             Layout.alignment: Qt.AlignVCenter  // Layout中垂直居中
                             onClicked: {

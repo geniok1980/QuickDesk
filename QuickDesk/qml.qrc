@@ -1,6 +1,5 @@
 <RCC>
-    <qresource prefix="/">
-        <file>qml/views/Main.qml</file>
+    <qresource prefix="/">        
         <file>qml/views/MainEntry.qml</file>
         <file>qml/views/MainWindow.qml</file>
         <file>qml/views/RemoteWindow.qml</file>

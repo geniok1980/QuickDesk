@@ -17,12 +17,17 @@ Window {
     
     // Properties
     property var clientManager: null
-    property var connections: [] // Array of connection objects: [{id, deviceId, name, state}]
+    property alias connectionModel: connectionModelObj  // C++ model for incremental updates
     property int currentTabIndex: 0
     property bool hasAutoResized: false  // Only auto-resize once on first frame
     property bool showVideoStats: false  // Toggle video stats overlay
     
-    // Performance stats stored separately to avoid triggering Repeater rebuild
+    // C++ ConnectionListModel — only affected delegates are created/destroyed
+    ConnectionListModel {
+        id: connectionModelObj
+    }
+    
+    // Performance stats stored separately to avoid triggering model rebuild
     // Map: connectionId -> { frameWidth, frameHeight, frameRate, ping,
     //   originalWidth, originalHeight, captureMs, encodeMs, decodeMs, paintMs,
     //   totalLatencyMs, roundTripMs, bandwidthKbps, packetRate, codec,
@@ -43,7 +48,7 @@ Window {
         }
     }
     
-    // Update performance stats without modifying connections array
+    // Update performance stats without modifying connections model
     function updatePerformanceStats(connectionId, width, height, fps, ping) {
         var stats = performanceStatsMap[connectionId]
         
@@ -100,27 +105,14 @@ Window {
     
     // Add connection to this window
     function addConnection(connectionId, deviceId) {
-        // Check if connection already exists
-        for (var i = 0; i < connections.length; i++) {
-            if (connections[i].id === connectionId) {
-                console.log("Connection already exists in window:", connectionId)
-                currentTabIndex = i
-                return
-            }
+        var existingIdx = connectionModel.indexOf(connectionId)
+        if (existingIdx >= 0) {
+            console.log("Connection already exists in window:", connectionId)
+            currentTabIndex = existingIdx
+            return
         }
         
-        var conn = {
-            id: connectionId,
-            deviceId: deviceId,
-            name: deviceId,
-            state: "connecting"
-            // ping removed from here
-        }
-        
-        // Create new array to trigger property binding update
-        var newConnections = connections.slice()
-        newConnections.push(conn)
-        connections = newConnections
+        connectionModel.addConnection(connectionId, deviceId)
         
         // Initialize performance stats
         var newStatsMap = Object.assign({}, performanceStatsMap)
@@ -135,18 +127,18 @@ Window {
         }
         performanceStatsMap = newStatsMap
         
-        currentTabIndex = connections.length - 1
-        console.log("Added connection to remote window:", connectionId, "Total tabs:", connections.length)
+        currentTabIndex = connectionModel.count - 1
+        console.log("Added connection to remote window:", connectionId, "Total tabs:", connectionModel.count)
     }
     
     // Close connection and remove tab (unified function for both scenarios)
     function closeConnection(index) {
-        if (index < 0 || index >= connections.length) {
+        if (index < 0 || index >= connectionModel.count) {
             console.warn("closeConnection: invalid index", index)
             return
         }
         
-        var connId = connections[index].id
+        var connId = connectionModel.connectionIdAt(index)
         console.log("Closing connection:", connId, "at index:", index)
         
         // 1. Disconnect from host
@@ -160,43 +152,41 @@ Window {
     
     // Remove connection from this window (internal helper)
     function removeConnection(index) {
-        if (index < 0 || index >= connections.length) return
+        if (index < 0 || index >= connectionModel.count) return
         
-        var connId = connections[index].id
+        var connId = connectionModel.connectionIdAt(index)
         
         // Remove from performance stats map
         var newStatsMap = Object.assign({}, performanceStatsMap)
         delete newStatsMap[connId]
         performanceStatsMap = newStatsMap
         
-        // Create new array to trigger property binding update
-        var newConnections = connections.slice()
-        newConnections.splice(index, 1)
-        connections = newConnections
+        // Remove from model — only destroys this one delegate
+        connectionModel.removeConnection(index)
         
         // Update current tab index
-        if (currentTabIndex >= connections.length) {
-            currentTabIndex = Math.max(0, connections.length - 1)
+        if (currentTabIndex >= connectionModel.count) {
+            currentTabIndex = Math.max(0, connectionModel.count - 1)
         }
         
         // Close window if no connections left
-        if (connections.length === 0) {
+        if (connectionModel.count === 0) {
             remoteWindow.close()
         }
         
-        console.log("Removed connection from remote window:", connId, "Remaining tabs:", connections.length)
+        console.log("Removed connection from remote window:", connId, "Remaining tabs:", connectionModel.count)
     }
     
     // Clean up all connections when window closes
     onClosing: function(close) {
         console.log("RemoteWindow closing, disconnecting all connections")
-        for (var i = 0; i < connections.length; i++) {
+        for (var i = 0; i < connectionModel.count; i++) {
             if (clientManager) {
-                console.log("Disconnecting:", connections[i].id)
-                clientManager.disconnectFromHost(connections[i].id)
+                console.log("Disconnecting:", connectionModel.connectionIdAt(i))
+                clientManager.disconnectFromHost(connectionModel.connectionIdAt(i))
             }
         }
-        connections = []
+        connectionModel.clear()
     }
     
     // Core resize logic — resize window to best fit the given remote desktop resolution
@@ -268,10 +258,10 @@ Window {
     // avoiding issues with nested signal handler / delegate destruction races.
     onStatsVersionChanged: {
         if (hasAutoResized) return
-        if (connections.length === 0) return
+        if (connectionModel.count === 0) return
 
-        var connId = currentTabIndex >= 0 && currentTabIndex < connections.length
-                     ? connections[currentTabIndex].id : ""
+        var connId = currentTabIndex >= 0 && currentTabIndex < connectionModel.count
+                     ? connectionModel.connectionIdAt(currentTabIndex) : ""
         if (!connId) return
 
         var s = getPerformanceStats(connId)
@@ -287,10 +277,10 @@ Window {
     // When switching tabs, check if the new tab's resolution differs significantly
     // from the current window size, and show a toast hint if so.
     onCurrentTabIndexChanged: {
-        if (connections.length <= 1) return  // No need for single tab
-        if (currentTabIndex < 0 || currentTabIndex >= connections.length) return
+        if (connectionModel.count <= 1) return  // No need for single tab
+        if (currentTabIndex < 0 || currentTabIndex >= connectionModel.count) return
 
-        var connId = connections[currentTabIndex].id
+        var connId = connectionModel.connectionIdAt(currentTabIndex)
         var s = getPerformanceStats(connId)
         if (!s || s.frameWidth <= 0 || s.frameHeight <= 0) return
 
@@ -320,20 +310,12 @@ Window {
 
     // Update connection state
     function updateConnectionState(connectionId, state, ping) {
-        // Update state in connections array (only if state changed)
+        // Update state in model (only emits dataChanged for the affected row)
         if (state !== "") {
-            for (var i = 0; i < connections.length; i++) {
-                if (connections[i].id === connectionId && connections[i].state !== state) {
-                    var newConnections = connections.slice()
-                    newConnections[i].state = state
-                    connections = newConnections
-                    console.log("Updated connection state:", connectionId, "->", state)
-                    break
-                }
-            }
+            connectionModel.updateState(connectionId, state)
         }
         
-        // Update ping in performance stats map (doesn't trigger Repeater rebuild)
+        // Update ping in performance stats map (doesn't trigger model rebuild)
         if (ping !== undefined) {
             updatePerformanceStats(connectionId, undefined, undefined, undefined, ping)
         }
@@ -347,7 +329,7 @@ Window {
         RemoteTabBar {
             id: tabBar
             Layout.fillWidth: true
-            connections: remoteWindow.connections
+            connectionModel: remoteWindow.connectionModel
             currentIndex: remoteWindow.currentTabIndex
             performanceStatsMap: remoteWindow.performanceStatsMap
             statsVersion: remoteWindow.statsVersion
@@ -374,31 +356,34 @@ Window {
             currentIndex: remoteWindow.currentTabIndex
             
             Repeater {
-                model: remoteWindow.connections
+                model: connectionModel
                 
                 Item {
+                    id: delegateItem
                     required property int index
-                    required property var modelData
+                    required property string connectionId
                     
                     // Remote desktop video view (ONLY video, no overlay UI)
                     RemoteDesktopView {
                         id: desktopView
                         anchors.fill: parent
-                        connectionId: modelData.id
+                        connectionId: delegateItem.connectionId
                         clientManager: remoteWindow.clientManager
-                        active: index === remoteWindow.currentTabIndex
+                        active: delegateItem.index === remoteWindow.currentTabIndex
                         
                         // Monitor video size changes (frameRate and ping updated from PerformanceTracker)
                         onFrameWidthChanged: {
                             if (frameWidth > 0 && frameHeight > 0) {
-                                var stats = remoteWindow.getPerformanceStats(modelData.id)
-                                remoteWindow.updatePerformanceStats(modelData.id, frameWidth, frameHeight, stats.frameRate, stats.ping)
+                                var connId = delegateItem.connectionId
+                                var stats = remoteWindow.getPerformanceStats(connId)
+                                remoteWindow.updatePerformanceStats(connId, frameWidth, frameHeight, stats.frameRate, stats.ping)
                             }
                         }
                         onFrameHeightChanged: {
                             if (frameWidth > 0 && frameHeight > 0) {
-                                var stats = remoteWindow.getPerformanceStats(modelData.id)
-                                remoteWindow.updatePerformanceStats(modelData.id, frameWidth, frameHeight, stats.frameRate, stats.ping)
+                                var connId = delegateItem.connectionId
+                                var stats = remoteWindow.getPerformanceStats(connId)
+                                remoteWindow.updatePerformanceStats(connId, frameWidth, frameHeight, stats.frameRate, stats.ping)
                             }
                         }
                     }
@@ -416,15 +401,15 @@ Window {
             x: parent.width - width - Theme.spacingXLarge
             y: Theme.spacingXLarge
             z: 1000
-            visible: remoteWindow.connections.length > 0
+            visible: connectionModel.count > 0
             
-            connectionId: remoteWindow.currentTabIndex >= 0 && remoteWindow.currentTabIndex < remoteWindow.connections.length 
-                ? remoteWindow.connections[remoteWindow.currentTabIndex].id 
+            connectionId: currentTabIndex >= 0 && currentTabIndex < connectionModel.count 
+                ? connectionModel.connectionIdAt(currentTabIndex) 
                 : ""
             clientManager: remoteWindow.clientManager
             videoInfo: {
-                var connId = remoteWindow.currentTabIndex >= 0 && remoteWindow.currentTabIndex < remoteWindow.connections.length 
-                    ? remoteWindow.connections[remoteWindow.currentTabIndex].id 
+                var connId = currentTabIndex >= 0 && currentTabIndex < connectionModel.count 
+                    ? connectionModel.connectionIdAt(currentTabIndex) 
                     : ""
                 return connId ? remoteWindow.getPerformanceStats(connId) : null
             }
@@ -441,18 +426,16 @@ Window {
                 console.log("FloatingToolButton disconnect requested for:", connectionId)
                 
                 // Find the connection index and close it
-                for (var i = 0; i < remoteWindow.connections.length; i++) {
-                    if (remoteWindow.connections[i].id === connectionId) {
-                        remoteWindow.closeConnection(i)
-                        break
-                    }
+                var idx = connectionModel.indexOf(connectionId)
+                if (idx >= 0) {
+                    remoteWindow.closeConnection(idx)
                 }
             }
             
             onFitToRemoteDesktopRequested: {
                 // Get current tab's frame dimensions and resize window
-                var connId = remoteWindow.currentTabIndex >= 0 && remoteWindow.currentTabIndex < remoteWindow.connections.length
-                    ? remoteWindow.connections[remoteWindow.currentTabIndex].id : ""
+                var connId = currentTabIndex >= 0 && currentTabIndex < connectionModel.count
+                    ? connectionModel.connectionIdAt(currentTabIndex) : ""
                 if (!connId) return
 
                 var s = remoteWindow.getPerformanceStats(connId)
@@ -478,13 +461,13 @@ Window {
             anchors.top: parent.top
             anchors.margins: Theme.spacingMedium
             z: 999
-            visible: remoteWindow.showVideoStats && remoteWindow.connections.length > 0
+            visible: remoteWindow.showVideoStats && connectionModel.count > 0
             
             stats: {
                 // Force re-evaluation when statsVersion changes
                 var _version = remoteWindow.statsVersion
-                var connId = remoteWindow.currentTabIndex >= 0 && remoteWindow.currentTabIndex < remoteWindow.connections.length
-                    ? remoteWindow.connections[remoteWindow.currentTabIndex].id : ""
+                var connId = currentTabIndex >= 0 && currentTabIndex < connectionModel.count
+                    ? connectionModel.connectionIdAt(currentTabIndex) : ""
                 return connId ? remoteWindow.getPerformanceStats(connId) : null
             }
         }
@@ -502,16 +485,14 @@ Window {
             
             // Auto-close tab when connection is disconnected or failed
             if (state === "disconnected" || state === "failed") {
-                // Find the connection index and close it
-                for (var i = 0; i < remoteWindow.connections.length; i++) {
-                    if (remoteWindow.connections[i].id === connectionId) {
-                        console.log("Auto-closing tab for", state, "connection:", connectionId, "at index:", i)
-                        // Use Qt.callLater to avoid modifying array during iteration
-                        Qt.callLater(function() {
-                            remoteWindow.closeConnection(i)
-                        })
-                        break
-                    }
+                var idx = connectionModel.indexOf(connectionId)
+                if (idx >= 0) {
+                    console.log("Auto-closing tab for", state, "connection:", connectionId, "at index:", idx)
+                    // Use Qt.callLater to avoid modifying model during signal handling
+                    var capturedIdx = idx
+                    Qt.callLater(function() {
+                        remoteWindow.closeConnection(capturedIdx)
+                    })
                 }
             }
         }
