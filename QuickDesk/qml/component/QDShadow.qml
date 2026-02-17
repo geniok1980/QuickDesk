@@ -18,7 +18,7 @@ Item {
     function _applyEffect() {
         if (target) {
             target.layer.enabled = true
-            target.layer.effect = effectComponent.createObject(root)
+            target.layer.effect = effectComponent
         }
     }
 

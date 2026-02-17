@@ -36,4 +36,34 @@ bool UserDataCenter::allIpRange(QVector<IpRange>& ipRanges)
     return m_userDataDB->allIpRange(ipRanges);
 }
 
+bool UserDataCenter::addOrUpdateRemoteDevice(const RemoteDevice& device)
+{
+    return m_userDataDB->addOrUpdateRemoteDevice(device);
+}
+
+bool UserDataCenter::removeRemoteDevice(const QString& deviceId)
+{
+    return m_userDataDB->removeRemoteDevice(deviceId);
+}
+
+bool UserDataCenter::getRemoteDevice(const QString& deviceId, RemoteDevice& device)
+{
+    return m_userDataDB->getRemoteDevice(deviceId, device);
+}
+
+bool UserDataCenter::getAllRemoteDevices(QVector<RemoteDevice>& devices)
+{
+    return m_userDataDB->getAllRemoteDevices(devices);
+}
+
+bool UserDataCenter::updateDeviceLastConnected(const QString& deviceId)
+{
+    return m_userDataDB->updateDeviceLastConnected(deviceId);
+}
+
+bool UserDataCenter::cleanOldDevices(int maxCount)
+{
+    return m_userDataDB->cleanOldDevices(maxCount);
+}
+
 }

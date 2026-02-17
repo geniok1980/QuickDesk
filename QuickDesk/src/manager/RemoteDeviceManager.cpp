@@ -1,5 +1,5 @@
 #include "RemoteDeviceManager.h"
-#include "core/db/userdatadatabase.h"
+#include "core/userdatacenter.h"
 #include "infra/log/log.h"
 
 #include <QDateTime>
@@ -11,24 +11,14 @@ constexpr char RemoteDeviceManager::ENCRYPTION_KEY[];
 
 RemoteDeviceManager::RemoteDeviceManager(QObject *parent)
     : QObject(parent)
-    , m_database(new core::UserDataDataBase())
+    , m_dataCenter(core::UserDataCenter::instance())
 {
-}
-
-RemoteDeviceManager::~RemoteDeviceManager()
-{
-    delete m_database;
 }
 
 bool RemoteDeviceManager::init()
 {
-    if (!m_database->init()) {
-        LOG_ERROR("[RemoteDeviceManager] Failed to initialize database");
-        return false;
-    }
-
     // Load all devices
-    if (!m_database->getAllRemoteDevices(m_devices)) {
+    if (!m_dataCenter.getAllRemoteDevices(m_devices)) {
         LOG_ERROR("[RemoteDeviceManager] Failed to load devices");
         return false;
     }
@@ -56,14 +46,14 @@ bool RemoteDeviceManager::saveDevice(const QString& deviceId, const QString& pas
     device.lastConnectedTime = QDateTime::currentMSecsSinceEpoch();
     device.createdTime = QDateTime::currentMSecsSinceEpoch();
 
-    if (!m_database->addOrUpdateRemoteDevice(device)) {
+    if (!m_dataCenter.addOrUpdateRemoteDevice(device)) {
         LOG_ERROR("[RemoteDeviceManager] Failed to save device: {}", deviceId.toStdString());
         return false;
     }
 
     // Reload device list
     m_devices.clear();
-    if (!m_database->getAllRemoteDevices(m_devices)) {
+    if (!m_dataCenter.getAllRemoteDevices(m_devices)) {
         LOG_ERROR("[RemoteDeviceManager] Failed to reload devices");
         return false;
     }
@@ -84,14 +74,14 @@ bool RemoteDeviceManager::removeDevice(const QString& deviceId)
         return false;
     }
 
-    if (!m_database->removeRemoteDevice(deviceId)) {
+    if (!m_dataCenter.removeRemoteDevice(deviceId)) {
         LOG_ERROR("[RemoteDeviceManager] Failed to remove device: {}", deviceId.toStdString());
         return false;
     }
 
     // Reload device list
     m_devices.clear();
-    if (!m_database->getAllRemoteDevices(m_devices)) {
+    if (!m_dataCenter.getAllRemoteDevices(m_devices)) {
         LOG_ERROR("[RemoteDeviceManager] Failed to reload devices");
         return false;
     }
@@ -106,7 +96,7 @@ bool RemoteDeviceManager::removeDevice(const QString& deviceId)
 QString RemoteDeviceManager::getDevicePassword(const QString& deviceId)
 {
     core::RemoteDevice device;
-    if (m_database->getRemoteDevice(deviceId, device)) {
+    if (m_dataCenter.getRemoteDevice(deviceId, device)) {
         return decryptPassword(device.accessPassword);
     }
     return QString();
@@ -127,11 +117,11 @@ void RemoteDeviceManager::updateDeviceConnected(const QString& deviceId)
         return;
     }
 
-    m_database->updateDeviceLastConnected(deviceId);
+    m_dataCenter.updateDeviceLastConnected(deviceId);
 
     // Reload device list to reflect new order
     m_devices.clear();
-    if (m_database->getAllRemoteDevices(m_devices)) {
+    if (m_dataCenter.getAllRemoteDevices(m_devices)) {
         emit deviceListChanged();
     }
 }
@@ -176,11 +166,11 @@ void RemoteDeviceManager::cleanOldDevices()
 
     // Clean if exceeded limit
     if (nonFavoriteCount > MAX_DEVICE_COUNT) {
-        m_database->cleanOldDevices(MAX_DEVICE_COUNT);
+        m_dataCenter.cleanOldDevices(MAX_DEVICE_COUNT);
         
         // Reload device list
         m_devices.clear();
-        if (m_database->getAllRemoteDevices(m_devices)) {
+        if (m_dataCenter.getAllRemoteDevices(m_devices)) {
             LOG_INFO("[RemoteDeviceManager] Cleaned old devices, now have {} devices", m_devices.size());
         }
     }

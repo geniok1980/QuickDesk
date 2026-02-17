@@ -7,7 +7,7 @@
 #include "core/common/commontype.h"
 
 namespace core {
-class UserDataDataBase;
+class UserDataCenter;
 }
 
 namespace quickdesk {
@@ -28,7 +28,7 @@ class RemoteDeviceManager : public QObject
 
 public:
     explicit RemoteDeviceManager(QObject *parent = nullptr);
-    ~RemoteDeviceManager();
+    ~RemoteDeviceManager() override = default;
 
     // Initialize database
     bool init();
@@ -66,7 +66,7 @@ private:
     // Convert RemoteDevice to QVariantMap for QML
     QVariantMap deviceToVariant(const core::RemoteDevice& device) const;
 
-    core::UserDataDataBase* m_database;
+    core::UserDataCenter& m_dataCenter;
     QVector<core::RemoteDevice> m_devices;
     
     static constexpr int MAX_DEVICE_COUNT = 50;
