@@ -139,6 +139,7 @@ QVideoFrame SharedMemoryManager::readVideoFrame(const QString& connectionId)
             quint32 height = header->height;
             quint32 dataSize = header->data_size;
             SharedFrameFormat frameFormat = static_cast<SharedFrameFormat>(header->format);
+            Q_UNUSED(frameFormat);
 
             if (width > 0 && height > 0 && width <= 8192 && height <= 8192) {
                 const uchar* frameData = static_cast<const uchar*>(data) + 

@@ -221,7 +221,7 @@ QByteArray QAESEncryption::expandKey(const QByteArray& key, bool isEncryptionKey
     } else
 #endif
     {
-
+        Q_UNUSED(isEncryptionKey);
         int i, k;
         quint8 tempa[4]; // Used for the column/row operations
         QByteArray roundKey(key); // The first round key is the key itself.

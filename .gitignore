@@ -58,3 +58,6 @@ compile_commands.json
 *output*
 QuickDesk/3rdparty/spdlog
 *publish*
+build
+QuickDesk/res/Info_Mac.plist
+.DS_Store

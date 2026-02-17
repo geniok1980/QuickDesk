@@ -422,7 +422,7 @@ void ProcessManager::onHostProcessStarted()
 void ProcessManager::onHostProcessErrorOccurred(QProcess::ProcessError error)
 {
     QString errorString = m_hostProcess ? m_hostProcess->errorString() : "Unknown error";
-    LOG_WARN("Host process error occurred: {} - {}", error, errorString.toStdString());
+    LOG_WARN("Host process error occurred: {} - {}", (int)error, errorString.toStdString());
     
     if (error == QProcess::FailedToStart) {
         QString errorMsg = QString("Failed to start Host process: %1").arg(errorString);
@@ -467,7 +467,7 @@ void ProcessManager::onClientProcessStarted()
 void ProcessManager::onClientProcessErrorOccurred(QProcess::ProcessError error)
 {
     QString errorString = m_clientProcess ? m_clientProcess->errorString() : "Unknown error";
-    LOG_WARN("Client process error occurred: {} - {}", error, errorString.toStdString());
+    LOG_WARN("Client process error occurred: {} - {}", (int)error, errorString.toStdString());
     
     if (error == QProcess::FailedToStart) {
         QString errorMsg = QString("Failed to start Client process: %1").arg(errorString);

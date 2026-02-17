@@ -110,7 +110,7 @@ private:
     // Auto-restart settings
     bool m_hostAutoRestart = true;
     bool m_clientAutoRestart = true;
-    static const int MAX_RESTART_ATTEMPTS = 5;
+    static constexpr int MAX_RESTART_ATTEMPTS = 5;
     static const int BASE_RESTART_DELAY_MS = 2000; // 2 seconds
 
     // Host restart state

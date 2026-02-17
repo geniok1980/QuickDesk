@@ -20,7 +20,7 @@ QString Util::fileMd5(const QString& filePath)
         QCryptographicHash hash(QCryptographicHash::Md5);
         while (readSize > 0 && (bytesRead = file.read(buffer, readSize)) > 0) {
             fileSize -= bytesRead;
-            hash.addData(buffer, bytesRead);
+            hash.addData(QByteArrayView(buffer, bytesRead));
             readSize = qMin(fileSize, bufferSize);
         }
 
