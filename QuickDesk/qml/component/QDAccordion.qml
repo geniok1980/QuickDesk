@@ -18,14 +18,7 @@ Item {
     // ============ Size & Style ============
     
     implicitWidth: parent ? parent.width : 400
-    implicitHeight: header.height + (expanded ? contentWrapper.height : 0)
-    
-    Behavior on implicitHeight {
-        NumberAnimation {
-            duration: Theme.animationDurationMedium
-            easing.type: Easing.OutCubic
-        }
-    }
+    implicitHeight: header.height + contentWrapper.height
     
     // ============ Content ============
     
