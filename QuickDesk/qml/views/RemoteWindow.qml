@@ -21,6 +21,7 @@ Window {
     property int currentTabIndex: 0
     property bool hasAutoResized: false  // Only auto-resize once on first frame
     property bool showVideoStats: false  // Toggle video stats overlay
+    property var closingConnections: ({})  // Guard against re-entrant closeConnection calls
     
     // C++ ConnectionListModel — only affected delegates are created/destroyed
     ConnectionListModel {
@@ -134,20 +135,28 @@ Window {
     // Close connection and remove tab (unified function for both scenarios)
     function closeConnection(index) {
         if (index < 0 || index >= connectionModel.count) {
-            console.warn("closeConnection: invalid index", index)
             return
         }
         
         var connId = connectionModel.connectionIdAt(index)
+        
+        // Prevent re-entrant calls (disconnectFromHost may trigger onConnectionStateChanged synchronously)
+        if (closingConnections[connId]) {
+            return
+        }
+        closingConnections[connId] = true
+        
         console.log("Closing connection:", connId, "at index:", index)
         
-        // 1. Disconnect from host
+        // 1. Remove the tab first (before disconnect to avoid re-entrant state change handler)
+        removeConnection(index)
+        
+        // 2. Disconnect from host
         if (clientManager) {
             clientManager.disconnectFromHost(connId)
         }
         
-        // 2. Remove the tab
-        removeConnection(index)
+        delete closingConnections[connId]
     }
     
     // Remove connection from this window (internal helper)
@@ -446,20 +455,24 @@ Window {
         function onConnectionStateChanged(connectionId, state, hostInfo) {
             console.log("Remote window: connection state changed:", connectionId, state)
             
+            // Skip if this connection is already being closed
+            if (remoteWindow.closingConnections[connectionId]) {
+                return
+            }
+            
             // Update connection state
             remoteWindow.updateConnectionState(connectionId, state, 0)
             
             // Auto-close tab when connection is disconnected or failed
             if (state === "disconnected" || state === "failed") {
-                var idx = connectionModel.indexOf(connectionId)
-                if (idx >= 0) {
-                    console.log("Auto-closing tab for", state, "connection:", connectionId, "at index:", idx)
-                    // Use Qt.callLater to avoid modifying model during signal handling
-                    var capturedIdx = idx
-                    Qt.callLater(function() {
-                        remoteWindow.closeConnection(capturedIdx)
-                    })
-                }
+                var connIdCopy = connectionId
+                Qt.callLater(function() {
+                    var idx = connectionModel.indexOf(connIdCopy)
+                    if (idx >= 0) {
+                        console.log("Auto-closing tab for", state, "connection:", connIdCopy, "at index:", idx)
+                        remoteWindow.closeConnection(idx)
+                    }
+                })
             }
         }
     }

@@ -32,6 +32,9 @@ ApplicationWindow {
     // Temporary storage for device credentials during connection
     property var pendingDeviceCredentials: ({})
     
+    // Connections aborted due to window creation failure (suppress state change toasts)
+    property var abortedConnections: ({})
+    
     // Main controller - reuse existing controller
     property MainController mainController: MainController {
         id: mainControllerObj
@@ -56,6 +59,20 @@ ApplicationWindow {
         
         function onConnectionStateChanged(connectionId, state, hostInfo) {
             console.log("MainWindow: Connection state changed:", connectionId, "->", state)
+            
+            // Handle aborted connections (window creation failed)
+            if (root.abortedConnections[connectionId]) {
+                if (state === "connected") {
+                    // Initial disconnect was too early (race condition) — retry now
+                    console.log("Retrying disconnect for aborted connection:", connectionId)
+                    mainController.clientManager.disconnectFromHost(connectionId)
+                } else if (state === "disconnected" || state === "failed") {
+                    var cleaned = Object.assign({}, root.abortedConnections)
+                    delete cleaned[connectionId]
+                    root.abortedConnections = cleaned
+                }
+                return
+            }
             
             // Save device credentials when connection is successfully established
             if (state === "connected" && root.pendingDeviceCredentials[connectionId]) {
@@ -212,8 +229,13 @@ ApplicationWindow {
                 remoteWindow.closeConnection(idx)
                 return
             }
-            console.log("Connection not found in RemoteWindow, disconnecting directly")
-        }        
+        }
+        
+        // Fallback: directly disconnect when RemoteWindow is null or connection not found
+        console.log("Disconnecting directly via clientManager:", connectionId)
+        if (mainController && mainController.clientManager) {
+            mainController.clientManager.disconnectFromHost(connectionId)
+        }
     }
     
     // Main layout with navigation and status bar
@@ -276,6 +298,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     mainController: root.mainController
+                    abortedConnections: root.abortedConnections
                     
                     onShowToast: function(message, toastType) {
                         toast.show(message, toastType)
@@ -303,7 +326,16 @@ ApplicationWindow {
                             }
                             
                             // Create remote window immediately (it will handle connection states)
-                            root.showRemoteWindow(connId, deviceId)
+                            if (!root.showRemoteWindow(connId, deviceId)) {
+                                // Window creation failed — mark as aborted, disconnect and clean up
+                                console.error("Remote window creation failed, disconnecting:", connId)
+                                delete root.pendingDeviceCredentials[connId]
+                                var newAborted = Object.assign({}, root.abortedConnections)
+                                newAborted[connId] = true
+                                root.abortedConnections = newAborted
+                                root.mainController.clientManager.disconnectFromHost(connId)
+                                remoteControlPage.resetConnectingState()
+                            }
                         }
                     }
                     onViewConnectionRequested: function(connectionId) {
@@ -484,12 +516,11 @@ ApplicationWindow {
         target: root.mainController ? root.mainController.clientManager : null
         
         function onConnectionStateChanged(connectionId, state, hostInfo) {
-            console.log("MainWindow: Connection state changed:", connectionId, "->", state)
+            // Skip aborted connections
+            if (root.abortedConnections[connectionId]) return
             
             // If connection is established, ensure the window is shown
             if (state === "connected") {
-                // Window should already exist from onConnectRequested, 
-                // but we'll ensure it's visible and raised
                 if (remoteWindow) {
                     remoteWindow.show()
                     remoteWindow.raise()

@@ -10,6 +10,9 @@ Item {
     // Controller reference passed from MainWindow
     property var mainController
     
+    // Aborted connections (window creation failed) - suppress state change toasts
+    property var abortedConnections: ({})
+    
     // Signal for connection request
     signal connectRequested(string deviceId, string password)
     
@@ -427,12 +430,13 @@ Item {
                 connectBtn.connectingState = false
             }
             
+            // Skip toasts for aborted connections (window creation failed)
+            if (root.abortedConnections && root.abortedConnections[connectionId]) {
+                return
+            }
+            
             if (state === "connected") {
                 root.showToast(qsTr("Connected successfully"), 0) // Success type
-                // Window is already created by MainWindow.showRemoteWindow()
-                
-                // Keep device ID and password for convenience (user feedback)
-                // User can manually clear if needed
             } else if (state === "failed") {
                 var errorMsg = hostInfo.error || qsTr("Connection failed")
                 root.showToast(qsTr("Connection failed: ") + errorMsg, 2) // Error type
