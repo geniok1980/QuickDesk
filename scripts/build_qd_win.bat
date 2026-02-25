@@ -68,9 +68,9 @@ echo ---------------------------------------------------------------
 :: handle output directory
 set output_path=%script_path%..\output
 if "!clean_output!"=="true" (
-    if exist %output_path% (
+    if exist "%output_path%" (
         echo [*] cleaning output dir: %output_path%
-        rmdir /q /s %output_path%
+        rmdir /q /s "%output_path%"
     )
 ) else (
     echo [*] keeping output dir: %output_path%
@@ -79,19 +79,19 @@ if "!clean_output!"=="true" (
 :: handle temp directory
 set temp_path=%script_path%..\build-temp
 if "!clean_output!"=="true" (
-    if exist %temp_path% (
+    if exist "%temp_path%" (
         echo [*] cleaning temp dir: %temp_path%
-        rmdir /q /s %temp_path%
+        rmdir /q /s "%temp_path%"
     )
 ) else (
-    echo [*] keeping temp dir (incremental build): %temp_path%
+    echo [*] keeping temp dir ^(incremental build^): %temp_path%
 )
 
 :: ensure temp directory exists
-if not exist %temp_path% (
-    md %temp_path%
+if not exist "%temp_path%" (
+    md "%temp_path%"
 )
-cd %temp_path%
+cd /d "%temp_path%"
 
 set cmake_params=-DCMAKE_PREFIX_PATH=%qt_cmake_path% -DCMAKE_BUILD_TYPE=%build_mode% -G "Visual Studio 17 2022" -A %cmake_vs_build_mode%
 echo [*] CMake params: %cmake_params%

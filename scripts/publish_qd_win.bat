@@ -78,59 +78,59 @@ echo begin publish
 echo ---------------------------------------------------------------
 
 :: check if output path exists
-if not exist %release_path% (
+if not exist "%release_path%" (
     echo [!] error: output path does not exist: %release_path%
     echo [!] please run build_qd_win.bat %build_mode% first
     goto return
 )
 
 :: clean and create publish directory
-if exist %publish_path% (
+if exist "%publish_path%" (
     echo [*] cleaning old publish dir...
-    rmdir /s/q %publish_path%
+    rmdir /s/q "%publish_path%"
 )
 echo [*] creating publish dir: %publish_path%
-mkdir %publish_path%
+mkdir "%publish_path%"
 
 :: copy program files to publish
 echo [*] copying program files...
-xcopy %release_path% %publish_path% /E /Y
+xcopy "%release_path%" "%publish_path%" /E /Y
 
 :: copy host and client from src/out
 echo [*] copying host and client...
-if not exist %src_out_path% (
+if not exist "%src_out_path%" (
     echo [!] warning: src/out path does not exist: %src_out_path%
 ) else (
     if exist "%src_out_path%\quickdesk_core.dll" (
-        copy /Y "%src_out_path%\quickdesk_core.dll" %publish_path%\ >nul
+        copy /Y "%src_out_path%\quickdesk_core.dll" "%publish_path%\" >nul
         echo [*] copied quickdesk_core.dll
     ) else (
         echo [!] warning: quickdesk_core.dll not found
     )
 
     if exist "%src_out_path%\quickdesk_host.exe" (
-        copy /Y "%src_out_path%\quickdesk_host.exe" %publish_path%\ >nul
+        copy /Y "%src_out_path%\quickdesk_host.exe" "%publish_path%\" >nul
         echo [*] copied quickdesk_host.exe
     ) else (
         echo [!] warning: quickdesk_host.exe not found
     )
 
     if exist "%src_out_path%\quickdesk_host_uiaccess.exe" (
-        copy /Y "%src_out_path%\quickdesk_host_uiaccess.exe" %publish_path%\ >nul
+        copy /Y "%src_out_path%\quickdesk_host_uiaccess.exe" "%publish_path%\" >nul
         echo [*] copied quickdesk_host_uiaccess.exe
     ) else (
         echo [!] warning: quickdesk_host_uiaccess.exe not found
     )
     
     if exist "%src_out_path%\quickdesk_client.exe" (
-        copy /Y "%src_out_path%\quickdesk_client.exe" %publish_path%\ >nul
+        copy /Y "%src_out_path%\quickdesk_client.exe" "%publish_path%\" >nul
         echo [*] copied quickdesk_client.exe
     ) else (
         echo [!] warning: quickdesk_client.exe not found
     )    
 
     if exist "%src_out_path%\icudtl.dat" (
-        copy /Y "%src_out_path%\icudtl.dat" %publish_path%\ >nul
+        copy /Y "%src_out_path%\icudtl.dat" "%publish_path%\" >nul
         echo [*] copied icudtl.dat
     ) else (
         echo [!] warning: icudtl.dat not found
@@ -140,49 +140,49 @@ echo=
 
 :: add Qt dependencies (specify qml path)
 echo [*] running windeployqt to add Qt dependencies...
-windeployqt --qmldir %script_path%..\QuickDesk\qml %publish_path%\QuickDesk.exe
+windeployqt --qmldir "%script_path%..\QuickDesk\qml" "%publish_path%\QuickDesk.exe"
 
 :: remove unnecessary Qt dependencies
 echo [*] cleaning unnecessary Qt dependencies...
-if exist %publish_path%\iconengines (
-    rmdir /s/q %publish_path%\iconengines
+if exist "%publish_path%\iconengines" (
+    rmdir /s/q "%publish_path%\iconengines"
 )
-if exist %publish_path%\translations (
-    rmdir /s/q %publish_path%\translations
+if exist "%publish_path%\translations" (
+    rmdir /s/q "%publish_path%\translations"
 )
-if exist %publish_path%\generic (
-    rmdir /s/q %publish_path%\generic
+if exist "%publish_path%\generic" (
+    rmdir /s/q "%publish_path%\generic"
 )
-if exist %publish_path%\logs (
-    rmdir /s/q %publish_path%\logs
+if exist "%publish_path%\logs" (
+    rmdir /s/q "%publish_path%\logs"
 )
-if exist %publish_path%\db (
-    rmdir /s/q %publish_path%\db
+if exist "%publish_path%\db" (
+    rmdir /s/q "%publish_path%\db"
 )
-if exist %publish_path%\platforminputcontexts (
-    rmdir /s/q %publish_path%\platforminputcontexts
+if exist "%publish_path%\platforminputcontexts" (
+    rmdir /s/q "%publish_path%\platforminputcontexts"
 )
-if exist %publish_path%\qmltooling (
-    rmdir /s/q %publish_path%\qmltooling
+if exist "%publish_path%\qmltooling" (
+    rmdir /s/q "%publish_path%\qmltooling"
 )
 
 :: clean imageformats, keep only needed dlls
-if exist %publish_path%\imageformats (
+if exist "%publish_path%\imageformats" (
     echo [*] cleaning imageformats...
-    del /q %publish_path%\imageformats\qgif.dll 2>nul
-    del /q %publish_path%\imageformats\qicns.dll 2>nul
-    del /q %publish_path%\imageformats\qico.dll 2>nul
-    del /q %publish_path%\imageformats\qsvg.dll 2>nul
-    del /q %publish_path%\imageformats\qtga.dll 2>nul
-    del /q %publish_path%\imageformats\qtiff.dll 2>nul
-    del /q %publish_path%\imageformats\qwbmp.dll 2>nul
-    del /q %publish_path%\imageformats\qwebp.dll 2>nul
+    del /q "%publish_path%\imageformats\qgif.dll" 2>nul
+    del /q "%publish_path%\imageformats\qicns.dll" 2>nul
+    del /q "%publish_path%\imageformats\qico.dll" 2>nul
+    del /q "%publish_path%\imageformats\qsvg.dll" 2>nul
+    del /q "%publish_path%\imageformats\qtga.dll" 2>nul
+    del /q "%publish_path%\imageformats\qtiff.dll" 2>nul
+    del /q "%publish_path%\imageformats\qwbmp.dll" 2>nul
+    del /q "%publish_path%\imageformats\qwebp.dll" 2>nul
 )
 
 :: clean sqldrivers, keep only sqlite
-if exist %publish_path%\sqldrivers (
-    echo [*] cleaning sqldrivers (keep sqlite)...
-    for %%f in (%publish_path%\sqldrivers\*.dll) do (
+if exist "%publish_path%\sqldrivers" (
+    echo [*] cleaning sqldrivers ^(keep sqlite^)...
+    for %%f in ("%publish_path%\sqldrivers\*.dll") do (
         echo %%~nxf | findstr /i "sqlite" >nul
         if errorlevel 1 (
             del /q "%%f" 2>nul
@@ -192,28 +192,28 @@ if exist %publish_path%\sqldrivers (
 
 :: remove unnecessary dlls and files
 echo [*] removing unnecessary files...
-del /q %publish_path%\Qt6VirtualKeyboard.dll 2>nul
-del /q %publish_path%\QuickDesk.exe.manifest 2>nul
-del /q %publish_path%\*.exp 2>nul
-del /q %publish_path%\*.lib 2>nul
+del /q "%publish_path%\Qt6VirtualKeyboard.dll" 2>nul
+del /q "%publish_path%\QuickDesk.exe.manifest" 2>nul
+del /q "%publish_path%\*.exp" 2>nul
+del /q "%publish_path%\*.lib" 2>nul
 
 :: remove unnecessary Qt6 dlls
-del /q %publish_path%\dxcompiler.dll 2>nul
-del /q %publish_path%\opengl32sw.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2FluentWinUI3StyleImpl.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2Fusion.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2FusionStyleImpl.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2Imagine.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2ImagineStyleImpl.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2Material.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2MaterialStyleImpl.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2Universal.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2UniversalStyleImpl.dll 2>nul
-del /q %publish_path%\Qt6QuickControls2WindowsStyleImpl.dll 2>nul
+del /q "%publish_path%\dxcompiler.dll" 2>nul
+del /q "%publish_path%\opengl32sw.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2FluentWinUI3StyleImpl.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2Fusion.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2FusionStyleImpl.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2Imagine.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2ImagineStyleImpl.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2Material.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2MaterialStyleImpl.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2Universal.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2UniversalStyleImpl.dll" 2>nul
+del /q "%publish_path%\Qt6QuickControls2WindowsStyleImpl.dll" 2>nul
 
 :: remove vc_redist installer, copy vcruntime dlls instead
 echo [*] removing vc_redist installer...
-del /q %publish_path%\vc_redist.x64.exe 2>nul
+del /q "%publish_path%\vc_redist.x64.exe" 2>nul
 
 :: copy vcruntime dll from VC Redist directory
 echo [*] copying VCRuntime DLLs...
@@ -221,11 +221,11 @@ if not exist "%vcruntime_path%" (
     echo [!] warning: VCRuntime path does not exist: %vcruntime_path%
     echo [!] please check if ENV_VCRUNTIME_VERSION is correct
 ) else (
-    copy /Y "%vcruntime_path%\msvcp140.dll" %publish_path%\ >nul
-    copy /Y "%vcruntime_path%\msvcp140_1.dll" %publish_path%\ >nul
-    copy /Y "%vcruntime_path%\msvcp140_2.dll" %publish_path%\ >nul
-    copy /Y "%vcruntime_path%\vcruntime140.dll" %publish_path%\ >nul
-    copy /Y "%vcruntime_path%\vcruntime140_1.dll" %publish_path%\ >nul
+    copy /Y "%vcruntime_path%\msvcp140.dll" "%publish_path%\" >nul
+    copy /Y "%vcruntime_path%\msvcp140_1.dll" "%publish_path%\" >nul
+    copy /Y "%vcruntime_path%\msvcp140_2.dll" "%publish_path%\" >nul
+    copy /Y "%vcruntime_path%\vcruntime140.dll" "%publish_path%\" >nul
+    copy /Y "%vcruntime_path%\vcruntime140_1.dll" "%publish_path%\" >nul
     echo [*] VCRuntime DLLs copied
 )
 
@@ -240,7 +240,7 @@ echo=
 set errno=0
 
 :return
-cd %old_cd%
+cd /d "%old_cd%"
 exit /B %errno%
 
 ENDLOCAL
