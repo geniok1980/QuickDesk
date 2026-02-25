@@ -11,7 +11,7 @@
 	<key>CFBundleIconFile</key>
 	<string>QuickDesk</string>
 	<key>CFBundleIdentifier</key>
-	<string>rankun.QuickDesk</string>
+	<string>com.quickcoder.quickdesk</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
