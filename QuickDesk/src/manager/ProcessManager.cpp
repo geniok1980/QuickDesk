@@ -556,10 +556,16 @@ QString ProcessManager::findExecutable(const QString& name)
     // Search paths in order of priority
     QStringList searchPaths;
     
-    // 1. Same directory as Qt app
+    // 1. Same directory as Qt app (Contents/MacOS)
     searchPaths << QCoreApplication::applicationDirPath();
     
-    // 2. Relative to workspace (for development)
+#ifdef Q_OS_MAC
+    // 2. Contents/Frameworks/ for .app bundles (publish layout)
+    searchPaths << QDir(QCoreApplication::applicationDirPath())
+                       .filePath("../Frameworks");
+#endif
+
+    // 3. Relative to workspace (for development)
     //    Workspace root is the parent of QuickDesk/output/x64/{Debug|Release}
     //    On Windows: applicationDirPath = .../QuickDesk/output/x64/Debug
     //    On Mac:     applicationDirPath = .../QuickDesk/output/x64/Debug/QuickDesk.app/Contents/MacOS

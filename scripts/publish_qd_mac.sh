@@ -69,6 +69,7 @@ fi
 
 if [ -d "$publish_path" ]; then
     echo "[*] cleaning old publish dir..."
+    xattr -rc "$publish_path" 2>/dev/null
     rm -rf "$publish_path"
 fi
 echo "[*] creating publish dir: $publish_path"
@@ -78,21 +79,24 @@ echo "[*] copying QuickDesk.app..."
 cp -R "$release_path/QuickDesk.app" "$publish_path/"
 
 macos_dir="$publish_path/QuickDesk.app/Contents/MacOS"
+frameworks_dir="$publish_path/QuickDesk.app/Contents/Frameworks"
 
 echo "[*] copying host and client..."
 if [ ! -d "$src_out_path" ]; then
     echo "[!] warning: src/out path does not exist: $src_out_path"
 else
+    mkdir -p "$frameworks_dir"
+
     if [ -d "$src_out_path/quickdesk_host.app" ]; then
-        cp -R "$src_out_path/quickdesk_host.app" "$macos_dir/"
-        echo "[*] copied quickdesk_host.app"
+        cp -R "$src_out_path/quickdesk_host.app" "$frameworks_dir/"
+        echo "[*] copied quickdesk_host.app -> Frameworks/"
     else
         echo "[!] warning: quickdesk_host.app not found"
     fi
 
     if [ -f "$src_out_path/quickdesk_client" ]; then
-        cp "$src_out_path/quickdesk_client" "$macos_dir/"
-        echo "[*] copied quickdesk_client"
+        cp "$src_out_path/quickdesk_client" "$frameworks_dir/"
+        echo "[*] copied quickdesk_client -> Frameworks/"
     else
         echo "[!] warning: quickdesk_client not found"
     fi
@@ -146,9 +150,47 @@ if [ -d "$plugins_dir/sqldrivers" ]; then
     done
 fi
 
-# Frameworks
+# Frameworks - remove unnecessary styles and components
 rm -rf "$frameworks_dir/QtVirtualKeyboard.framework"
+rm -rf "$frameworks_dir/QtVirtualKeyboardSettings.framework"
 rm -rf "$frameworks_dir/QtSvg.framework"
+rm -rf "$frameworks_dir/QtQuickControls2FluentWinUI3StyleImpl.framework"
+rm -rf "$frameworks_dir/QtQuickControls2Fusion.framework"
+rm -rf "$frameworks_dir/QtQuickControls2FusionStyleImpl.framework"
+rm -rf "$frameworks_dir/QtQuickControls2IOSStyleImpl.framework"
+rm -rf "$frameworks_dir/QtQuickControls2Imagine.framework"
+rm -rf "$frameworks_dir/QtQuickControls2ImagineStyleImpl.framework"
+rm -rf "$frameworks_dir/QtQuickControls2Material.framework"
+rm -rf "$frameworks_dir/QtQuickControls2MaterialStyleImpl.framework"
+rm -rf "$frameworks_dir/QtQuickControls2Universal.framework"
+rm -rf "$frameworks_dir/QtQuickControls2UniversalStyleImpl.framework"
+
+# PlugIns/quick - remove unnecessary style and virtual keyboard plugins
+echo "[*] cleaning unnecessary quick plugins..."
+rm -f "$plugins_dir/quick/libqtquickcontrols2fluentwinui3styleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2fluentwinui3styleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2fusionstyleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2fusionstyleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2imaginestyleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2imaginestyleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2iosstyleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2iosstyleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2materialstyleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2materialstyleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2universalstyleimplplugin.dylib"
+rm -f "$plugins_dir/quick/libqtquickcontrols2universalstyleplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbbuiltinstylesplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbcomponentsplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbhangulplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkblayoutsplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbopenwnnplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbpinyinplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbpluginsplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbsettingsplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbstylesplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbtcimeplugin.dylib"
+rm -f "$plugins_dir/quick/libqtvkbthaiplugin.dylib"
 
 echo "[*] cleaning unnecessary files..."
 rm -rf "$publish_path/QuickDesk.app/Contents/MacOS/logs"
