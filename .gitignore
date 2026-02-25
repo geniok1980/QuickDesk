@@ -61,3 +61,4 @@ QuickDesk/3rdparty/spdlog
 build
 QuickDesk/res/Info_Mac.plist
 .DS_Store
+QuickDesk/3rdparty/quickdesk-remoting

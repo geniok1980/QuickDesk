@@ -555,21 +555,13 @@ QString ProcessManager::findExecutable(const QString& name)
 {
     // Search paths in order of priority
     QStringList searchPaths;
-    
-    // 1. Same directory as Qt app (Contents/MacOS)
-    searchPaths << QCoreApplication::applicationDirPath();
-    
-#ifdef Q_OS_MAC
-    // 2. Contents/Frameworks/ for .app bundles (publish layout)
-    searchPaths << QDir(QCoreApplication::applicationDirPath())
-                       .filePath("../Frameworks");
-#endif
+        
+    QString appDir = QCoreApplication::applicationDirPath();    
 
-    // 3. Relative to workspace (for development)
+    // Relative to workspace (for development)
     //    Workspace root is the parent of QuickDesk/output/x64/{Debug|Release}
     //    On Windows: applicationDirPath = .../QuickDesk/output/x64/Debug
-    //    On Mac:     applicationDirPath = .../QuickDesk/output/x64/Debug/QuickDesk.app/Contents/MacOS
-    QString appDir = QCoreApplication::applicationDirPath();
+    //    On Mac:     applicationDirPath = .../QuickDesk/output/x64/Debug/QuickDesk.app/Contents/MacOS    
 #ifdef Q_OS_MAC
     // Go up 3 extra levels for .app/Contents/MacOS
     static const QString kRelPrefix = "../../../../../../../src/out/";
@@ -581,6 +573,19 @@ QString ProcessManager::findExecutable(const QString& name)
     searchPaths << QDir(appDir).filePath(kRelPrefix + "Debug");
 #else
     searchPaths << QDir(appDir).filePath(kRelPrefix + "Release");
+#endif
+
+#ifdef Q_OS_WIN
+    // 3rdparty directory (for development)
+    searchPaths << QDir(appDir).filePath("../../../QuickDesk/3rdparty/quickdesk-remoting/x64");
+
+    // Same directory as Qt exec
+    searchPaths << appDir;
+#endif
+
+#ifdef Q_OS_MAC
+    // Contents/Frameworks/ for .app bundles (publish layout)
+    searchPaths << QDir(appDir).filePath("../Frameworks");
 #endif
     
 #ifdef Q_OS_WIN
