@@ -168,32 +168,32 @@ void ClientManager::sendHello(const QString& deviceId,
 
 void ClientManager::sendMouseMove(const QString& connectionId, int x, int y)
 {
-    sendMouseEvent(connectionId, "move", x, y, 0, 0);
+    sendMouseEvent(connectionId, "move", x, y, 0, 0, 0);
 }
 
 void ClientManager::sendMousePress(const QString& connectionId, int x, int y, int button)
 {
-    sendMouseEvent(connectionId, "press", x, y, button, 0);
+    sendMouseEvent(connectionId, "press", x, y, button, 0, 0);
 }
 
 void ClientManager::sendMouseRelease(const QString& connectionId, int x, int y, int button)
 {
-    sendMouseEvent(connectionId, "release", x, y, button, 0);
+    sendMouseEvent(connectionId, "release", x, y, button, 0, 0);
 }
 
-void ClientManager::sendMouseWheel(const QString& connectionId, int x, int y, int delta)
+void ClientManager::sendMouseWheel(const QString& connectionId, int x, int y, int deltaX, int deltaY)
 {
-    sendMouseEvent(connectionId, "wheel", x, y, 0, delta);
+    sendMouseEvent(connectionId, "wheel", x, y, 0, deltaX, deltaY);
 }
 
-void ClientManager::sendKeyPress(const QString& connectionId, int keyCode, int modifiers)
+void ClientManager::sendKeyPress(const QString& connectionId, int nativeScanCode, int lockStates)
 {
-    sendKeyboardEvent(connectionId, "press", keyCode, modifiers);
+    sendKeyboardEvent(connectionId, "press", nativeScanCode, lockStates);
 }
 
-void ClientManager::sendKeyRelease(const QString& connectionId, int keyCode, int modifiers)
+void ClientManager::sendKeyRelease(const QString& connectionId, int nativeScanCode, int lockStates)
 {
-    sendKeyboardEvent(connectionId, "release", keyCode, modifiers);
+    sendKeyboardEvent(connectionId, "release", nativeScanCode, lockStates);
 }
 
 void ClientManager::syncClipboard(const QString& connectionId, const QString& text)
@@ -827,7 +827,8 @@ void ClientManager::handleVideoLayoutChanged(const QJsonObject& message)
 }
 
 void ClientManager::sendMouseEvent(const QString& connectionId, const QString& eventType,
-                                   int x, int y, int button, int wheelDelta)
+                                   int x, int y, int button,
+                                   int wheelDeltaX, int wheelDeltaY)
 {
     if (!m_messaging || !m_messaging->isReady()) {
         return;
@@ -840,12 +841,13 @@ void ClientManager::sendMouseEvent(const QString& connectionId, const QString& e
     message["x"] = x;
     message["y"] = y;
     message["button"] = button;
-    message["wheelDelta"] = wheelDelta;
+    message["wheelDeltaX"] = wheelDeltaX;
+    message["wheelDeltaY"] = wheelDeltaY;
     m_messaging->sendMessage(message);
 }
 
 void ClientManager::sendKeyboardEvent(const QString& connectionId, const QString& eventType,
-                                      int keyCode, int modifiers)
+                                      int nativeScanCode, int lockStates)
 {
     if (!m_messaging || !m_messaging->isReady()) {
         return;
@@ -855,8 +857,8 @@ void ClientManager::sendKeyboardEvent(const QString& connectionId, const QString
     message["type"] = "keyboardEvent";
     message["connectionId"] = connectionId;
     message["eventType"] = eventType;
-    message["keyCode"] = keyCode;
-    message["modifiers"] = modifiers;
+    message["nativeScanCode"] = nativeScanCode;
+    message["lockStates"] = lockStates;
     m_messaging->sendMessage(message);
 }
 

@@ -1,53 +1,42 @@
 // Copyright 2026 QuickDesk Authors
-// Qt Key to USB HID Keycode Mapper
 
-#ifndef QUICKDESK_COMPONENT_KEYCODEMAPPER_H
-#define QUICKDESK_COMPONENT_KEYCODEMAPPER_H
+#pragma once
 
 #include <QObject>
-#include <QMap>
+
+#include "base/singleton.h"
 
 namespace quickdesk {
 
 /**
- * @brief Converts Qt key codes to USB HID keycodes
- * 
- * USB HID keycode format:
- * - Upper 16 bits: Usage Page (0x0007 for keyboard)
- * - Lower 16 bits: Usage ID
- * 
- * Usage as QML singleton:
- *   KeycodeMapper.qtKeyToUsb(event.key, event.modifiers)
+ * @brief Tracks keyboard lock key states via QKeyEvent::nativeModifiers().
+ *
+ * Installs an event filter on QGuiApplication to cache nativeModifiers
+ * from every key event. The lock key bits are platform-plugin–specific
+ * constants set by QWindowsKeyMapper / QCocoaKeyMapper.
  */
-class KeycodeMapper : public QObject {
+class KeyboardStateTracker : public QObject,
+                             public base::Singleton<KeyboardStateTracker> {
     Q_OBJECT
 
 public:
-    explicit KeycodeMapper(QObject* parent = nullptr);
-    ~KeycodeMapper() override = default;
+    KeyboardStateTracker(QObject* parent = nullptr);
 
-    /**
-     * @brief Convert Qt key code to USB HID keycode
-     * @param qtKey Qt::Key value
-     * @param modifiers Qt::KeyboardModifiers
-     * @return USB HID keycode (0x0007XXXX), or 0 if not mapped
-     */
-    Q_INVOKABLE int qtKeyToUsb(int qtKey, int modifiers) const;
+    /// @return Bitmask: 1=CapsLock, 2=NumLock, 4=ScrollLock
+    Q_INVOKABLE int getLockStates() const;
 
-    /**
-     * @brief Get singleton instance
-     */
-    static KeycodeMapper* instance();
+    /// @return Platform-native keycode suitable for Chromium's
+    ///         KeycodeConverter::NativeKeycodeToUsbKeycode():
+    ///         - Windows: nativeScanCode (hardware scan code)
+    ///         - macOS:   nativeVirtualKey (macOS virtual key code, [NSEvent keyCode])
+    Q_INVOKABLE int getLastNativeKeycode() const;
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private:
-    void initKeyMap();
-    
-    // Qt Key -> USB Usage ID mapping
-    QMap<int, int> m_keyMap;
-    
-    static KeycodeMapper* s_instance;
+    quint32 m_cachedNativeModifiers = 0;
+    quint32 m_cachedNativeKeycode = 0;
 };
 
 } // namespace quickdesk
-
-#endif // QUICKDESK_COMPONENT_KEYCODEMAPPER_H

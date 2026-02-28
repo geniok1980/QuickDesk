@@ -76,9 +76,9 @@ public:
     Q_INVOKABLE void sendMouseMove(const QString& connectionId, int x, int y);
     Q_INVOKABLE void sendMousePress(const QString& connectionId, int x, int y, int button);
     Q_INVOKABLE void sendMouseRelease(const QString& connectionId, int x, int y, int button);
-    Q_INVOKABLE void sendMouseWheel(const QString& connectionId, int x, int y, int delta);
-    Q_INVOKABLE void sendKeyPress(const QString& connectionId, int keyCode, int modifiers);
-    Q_INVOKABLE void sendKeyRelease(const QString& connectionId, int keyCode, int modifiers);
+    Q_INVOKABLE void sendMouseWheel(const QString& connectionId, int x, int y, int deltaX, int deltaY);
+    Q_INVOKABLE void sendKeyPress(const QString& connectionId, int nativeScanCode, int lockStates);
+    Q_INVOKABLE void sendKeyRelease(const QString& connectionId, int nativeScanCode, int lockStates);
 
     // Clipboard
     Q_INVOKABLE void syncClipboard(const QString& connectionId, const QString& text);
@@ -189,9 +189,10 @@ private:
     void handleVideoLayoutChanged(const QJsonObject& message);
     
     void sendMouseEvent(const QString& connectionId, const QString& eventType,
-                        int x, int y, int button, int wheelDelta);
+                        int x, int y, int button,
+                        int wheelDeltaX, int wheelDeltaY);
     void sendKeyboardEvent(const QString& connectionId, const QString& eventType,
-                           int keyCode, int modifiers);
+                           int nativeScanCode, int lockStates);
 };
 
 } // namespace quickdesk

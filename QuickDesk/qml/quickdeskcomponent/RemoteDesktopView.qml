@@ -158,9 +158,9 @@ Rectangle {
             if (!root.clientManager) return;
             var remote = root.mapToRemote(wheel.x, wheel.y);
             if (remote) {
-                // Qt provides angleDelta in 1/8 of a degree
-                var delta = wheel.angleDelta.y;
-                root.clientManager.sendMouseWheel(root.connectionId, remote.x, remote.y, delta);
+                root.clientManager.sendMouseWheel(
+                    root.connectionId, remote.x, remote.y,
+                    wheel.angleDelta.x, wheel.angleDelta.y);
             }
         }
         
@@ -182,25 +182,25 @@ Rectangle {
         }
     }
     
-    // Keyboard event handling
+    // Keyboard event handling — passes nativeScanCode directly.
+    // The C++ client converts it to USB HID keycode via Chromium's
+    // KeycodeConverter::NativeKeycodeToUsbKeycode().
     Keys.onPressed: function(event) {
         if (!root.inputEnabled || !root.clientManager) return;
-        
-        var usbKeycode = KeycodeMapper.qtKeyToUsb(event.key, event.modifiers);
-        if (usbKeycode > 0) {
-            root.clientManager.sendKeyPress(root.connectionId, usbKeycode, event.modifiers);
-            event.accepted = true;
-        }
+
+        root.clientManager.sendKeyPress(
+            root.connectionId, KeyboardStateTracker.getLastNativeKeycode(),
+            KeyboardStateTracker.getLockStates());
+        event.accepted = true;
     }
-    
+
     Keys.onReleased: function(event) {
         if (!root.inputEnabled || !root.clientManager) return;
-        
-        var usbKeycode = KeycodeMapper.qtKeyToUsb(event.key, event.modifiers);
-        if (usbKeycode > 0) {
-            root.clientManager.sendKeyRelease(root.connectionId, usbKeycode, event.modifiers);
-            event.accepted = true;
-        }
+
+        root.clientManager.sendKeyRelease(
+            root.connectionId, KeyboardStateTracker.getLastNativeKeycode(),
+            KeyboardStateTracker.getLockStates());
+        event.accepted = true;
     }
     
     // Frame provider connects shared memory to video sink

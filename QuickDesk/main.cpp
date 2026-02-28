@@ -83,10 +83,10 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<quickdesk::RtcStatus>("QuickDesk", 1, 0, "RtcStatus",
         "RtcStatus is an enum container");
     
-    // Register KeycodeMapper as singleton
-    qmlRegisterSingletonType<quickdesk::KeycodeMapper>("QuickDesk", 1, 0, "KeycodeMapper",
+    // Register KeyboardStateTracker as singleton
+    qmlRegisterSingletonType<quickdesk::KeyboardStateTracker>("QuickDesk", 1, 0, "KeyboardStateTracker",
         [](QQmlEngine*, QJSEngine*) -> QObject* {
-            return quickdesk::KeycodeMapper::instance();
+            return &quickdesk::KeyboardStateTracker::instance();
         });
     
     // Register LanguageManage as singleton
