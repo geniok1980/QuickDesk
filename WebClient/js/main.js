@@ -23,6 +23,7 @@ class QuickDeskApp {
         this._renderUserServers();
 
         this._loadSavedServerUrl();
+        this._applyUrlParams();
 
         window.addEventListener('message', (e) => this._onMessage(e));
     }
@@ -73,6 +74,26 @@ class QuickDeskApp {
         const serverUrlInput = document.getElementById('serverUrl');
         if (savedUrl && serverUrlInput) {
             serverUrlInput.value = savedUrl;
+        }
+    }
+
+    _applyUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const server = params.get('server');
+        const device = params.get('device');
+        const code = params.get('code');
+
+        if (server) {
+            const serverUrlInput = document.getElementById('serverUrl');
+            if (serverUrlInput) serverUrlInput.value = server;
+        }
+        if (device) {
+            const deviceIdInput = document.getElementById('deviceId');
+            if (deviceIdInput) deviceIdInput.value = device;
+        }
+        if (code) {
+            const accessCodeInput = document.getElementById('accessCode');
+            if (accessCodeInput) accessCodeInput.value = code;
         }
     }
 
