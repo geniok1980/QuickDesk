@@ -1,12 +1,14 @@
+use rmcp::handler::server::router::prompt::PromptRouter;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    Annotated, ErrorData, Implementation, ListResourceTemplatesResult, ListResourcesResult,
-    PaginatedRequestParams, RawResource, RawResourceTemplate, ReadResourceRequestParams,
+    Annotated, ErrorData, GetPromptRequestParams, GetPromptResult, Implementation,
+    ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
+    PromptMessage, PromptMessageRole, RawResource, RawResourceTemplate, ReadResourceRequestParams,
     ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use rmcp::{tool, tool_handler, tool_router, ServerHandler};
+use rmcp::{prompt, prompt_handler, prompt_router, tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -121,11 +123,52 @@ struct SetClipboardParam {
     text: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct MouseDragParam {
+    /// Connection ID
+    connection_id: String,
+    /// Start X coordinate
+    start_x: f64,
+    /// Start Y coordinate
+    start_y: f64,
+    /// End X coordinate
+    end_x: f64,
+    /// End Y coordinate
+    end_y: f64,
+    /// Mouse button: "left" (default), "right", or "middle"
+    button: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct KeyParam {
+    /// Connection ID
+    connection_id: String,
+    /// Key name, e.g. "shift", "ctrl", "a", "enter". Same key names as keyboard_hotkey.
+    key: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct FindAndClickArgs {
+    /// Description of the UI element to find, e.g. "the Save button", "the search input field"
+    element_description: String,
+    /// Connection ID of the remote desktop
+    connection_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct RunCommandArgs {
+    /// The command to run, e.g. "dir C:\\", "ipconfig /all"
+    command: String,
+    /// Connection ID of the remote desktop
+    connection_id: String,
+}
+
 // ---- MCP Server ----
 
 #[derive(Clone)]
 pub struct QuickDeskMcpServer {
     tool_router: ToolRouter<Self>,
+    prompt_router: PromptRouter<Self>,
     ws: WsClient,
 }
 
@@ -133,6 +176,7 @@ impl QuickDeskMcpServer {
     pub fn new(ws: WsClient) -> Self {
         Self {
             tool_router: Self::tool_router(),
+            prompt_router: Self::prompt_router(),
             ws,
         }
     }
@@ -405,6 +449,68 @@ impl QuickDeskMcpServer {
         }
     }
 
+    #[tool(description = "Drag the mouse from one position to another on the remote desktop. Useful for drag-and-drop, text selection, resizing windows, and moving objects.")]
+    async fn mouse_drag(&self, params: Parameters<MouseDragParam>) -> String {
+        let p = params.0;
+        match self
+            .ws
+            .request(
+                "mouseDrag",
+                json!({
+                    "connectionId": p.connection_id,
+                    "startX": p.start_x, "startY": p.start_y,
+                    "endX": p.end_x, "endY": p.end_y,
+                    "button": p.button.unwrap_or_else(|| "left".to_string()),
+                }),
+            )
+            .await
+        {
+            Ok(_) => format!(
+                "Dragged from ({}, {}) to ({}, {})",
+                p.start_x, p.start_y, p.end_x, p.end_y
+            ),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Press and hold a key on the remote desktop. The key stays pressed until explicitly released with key_release. Useful for modifier keys (shift, ctrl, alt) while performing mouse operations like Ctrl+click for multi-select.")]
+    async fn key_press(&self, params: Parameters<KeyParam>) -> String {
+        let p = params.0;
+        match self
+            .ws
+            .request(
+                "keyPress",
+                json!({
+                    "connectionId": p.connection_id,
+                    "key": p.key,
+                }),
+            )
+            .await
+        {
+            Ok(_) => format!("Key pressed: {}", p.key),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Release a previously pressed key on the remote desktop. Must be paired with a prior key_press call.")]
+    async fn key_release(&self, params: Parameters<KeyParam>) -> String {
+        let p = params.0;
+        match self
+            .ws
+            .request(
+                "keyRelease",
+                json!({
+                    "connectionId": p.connection_id,
+                    "key": p.key,
+                }),
+            )
+            .await
+        {
+            Ok(_) => format!("Key released: {}", p.key),
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     #[tool(description = "Get the remote screen resolution.")]
     async fn get_screen_size(&self, params: Parameters<ConnectionIdParam>) -> String {
         match self
@@ -418,13 +524,136 @@ impl QuickDeskMcpServer {
     }
 }
 
+#[prompt_router]
+impl QuickDeskMcpServer {
+    /// System prompt for AI agents operating a remote desktop via QuickDesk.
+    /// Explains the screenshot-analyze-act loop, coordinate system, best practices, and available tools.
+    #[prompt(name = "operate_remote_desktop")]
+    async fn operate_remote_desktop(&self) -> Result<Vec<PromptMessage>, ErrorData> {
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            "You are controlling a remote desktop through QuickDesk MCP tools. Follow this workflow:\n\
+            \n\
+            ## Core Loop: Screenshot → Analyze → Act → Verify\n\
+            \n\
+            1. **Screenshot**: Call `screenshot` to see the current screen state. Use `max_width: 1280` to reduce transfer size while keeping enough detail.\n\
+            2. **Analyze**: Study the screenshot to understand what's on screen. Identify UI elements, their positions, and the current state.\n\
+            3. **Act**: Perform ONE action (click, type, hotkey, etc.) based on your analysis.\n\
+            4. **Verify**: Take another screenshot to confirm the action succeeded. If it didn't, retry or try an alternative approach.\n\
+            \n\
+            ## Coordinate System\n\
+            \n\
+            - Call `get_screen_size` to get the remote desktop resolution (e.g. 1920x1080).\n\
+            - Screenshot coordinates map directly to screen coordinates when using full resolution.\n\
+            - If you used `max_width` in screenshot, scale coordinates proportionally: `actual_x = screenshot_x * (screen_width / image_width)`.\n\
+            \n\
+            ## Best Practices\n\
+            \n\
+            - **Wait after actions**: UI animations and loading take time. After clicking or typing, wait briefly before taking the next screenshot.\n\
+            - **One action at a time**: Don't chain multiple actions without verifying each one.\n\
+            - **Use keyboard shortcuts**: They are more reliable than clicking menus. E.g. Ctrl+S to save, Ctrl+C to copy, Win+R to open Run dialog.\n\
+            - **Type via keyboard_type**: It uses clipboard paste internally for reliable unicode support.\n\
+            - **Error recovery**: If an action fails, take a screenshot to understand the current state, then try an alternative approach.\n\
+            - **Modifier+click**: Use `key_press` to hold a modifier (e.g. \"ctrl\"), then `mouse_click`, then `key_release` the modifier. This enables Ctrl+click for multi-select.\n\
+            - **Drag operations**: Use `mouse_drag` for selecting text, moving files, resizing windows, or drag-and-drop.\n\
+            \n\
+            ## Available Tools Summary\n\
+            \n\
+            | Category | Tools |\n\
+            |----------|-------|\n\
+            | Connection | connect_device, disconnect_device, list_connections |\n\
+            | Vision | screenshot, get_screen_size |\n\
+            | Mouse | mouse_click, mouse_double_click, mouse_move, mouse_scroll, mouse_drag |\n\
+            | Keyboard | keyboard_type, keyboard_hotkey, key_press, key_release |\n\
+            | Clipboard | get_clipboard, set_clipboard |\n\
+            | System | get_host_info, get_status |"
+        )])
+    }
+
+    /// Guide for finding and clicking a specific UI element on the remote desktop.
+    #[prompt(name = "find_and_click")]
+    async fn find_and_click(
+        &self,
+        params: Parameters<FindAndClickArgs>,
+    ) -> Result<Vec<PromptMessage>, ErrorData> {
+        let args = params.0;
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!(
+                "Find and click the following element on the remote desktop: \"{}\"\n\
+                Connection ID: {}\n\
+                \n\
+                Follow these steps:\n\
+                \n\
+                1. Call `screenshot` with connection_id=\"{}\" and max_width=1280 to see the current screen.\n\
+                2. Analyze the screenshot to locate \"{}\".\n\
+                   - Look for text labels, icons, or visual cues that match the description.\n\
+                   - If the element is not visible, you may need to scroll or navigate to find it.\n\
+                3. Call `get_screen_size` to get the actual screen resolution.\n\
+                4. Calculate the actual coordinates: if the screenshot is smaller than the screen, scale up proportionally.\n\
+                   - `actual_x = screenshot_x * (screen_width / image_width)`\n\
+                   - `actual_y = screenshot_y * (screen_height / image_height)`\n\
+                5. Click at the calculated coordinates using `mouse_click`.\n\
+                6. Take another screenshot to verify the click worked (e.g. a menu opened, a button was pressed, a page navigated).\n\
+                7. If the click didn't hit the right target, adjust coordinates and retry.\n\
+                \n\
+                Tips:\n\
+                - Click the CENTER of the element, not the edge.\n\
+                - For small elements (checkboxes, radio buttons), be extra precise with coordinates.\n\
+                - If the element is in a scrollable area and not visible, use mouse_scroll first.",
+                args.element_description, args.connection_id,
+                args.connection_id, args.element_description
+            ),
+        )])
+    }
+
+    /// Guide for running a command or script on the remote desktop via terminal/command prompt.
+    #[prompt(name = "run_command")]
+    async fn run_command(
+        &self,
+        params: Parameters<RunCommandArgs>,
+    ) -> Result<Vec<PromptMessage>, ErrorData> {
+        let args = params.0;
+        Ok(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!(
+                "Run the following command on the remote desktop: `{}`\n\
+                Connection ID: {}\n\
+                \n\
+                Follow these steps:\n\
+                \n\
+                1. Take a screenshot to see the current screen state.\n\
+                2. Open a terminal / command prompt:\n\
+                   - **Windows**: Use `keyboard_hotkey` with keys [\"win\", \"r\"], wait, then `keyboard_type` \"cmd\" and press Enter. Or use [\"win\", \"x\"] then \"i\" for PowerShell.\n\
+                   - **macOS**: Use Spotlight with [\"meta\", \"space\"], type \"Terminal\", press Enter.\n\
+                   - **Linux**: Try [\"ctrl\", \"alt\", \"t\"] to open terminal.\n\
+                   - If a terminal is already open, skip this step.\n\
+                3. Take a screenshot to verify the terminal is open and ready for input.\n\
+                4. Type the command using `keyboard_type` with text=\"{}\".\n\
+                5. Press Enter using `keyboard_hotkey` with keys [\"enter\"].\n\
+                6. Wait briefly for the command to execute.\n\
+                7. Take a screenshot to capture the output.\n\
+                8. If the output is long, you may need to scroll up to see all of it.\n\
+                \n\
+                Tips:\n\
+                - For long-running commands, take multiple screenshots to monitor progress.\n\
+                - If the command requires elevated privileges, you may need to run as administrator.\n\
+                - Use `get_clipboard` after selecting output text (Ctrl+A in terminal, then Ctrl+C) to get the text content.",
+                args.command, args.connection_id, args.command
+            ),
+        )])
+    }
+}
+
 #[tool_handler]
+#[prompt_handler]
 impl ServerHandler for QuickDeskMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
+                .enable_prompts()
                 .build(),
             server_info: Implementation {
                 name: "quickdesk-mcp".to_string(),

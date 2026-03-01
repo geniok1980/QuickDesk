@@ -51,9 +51,14 @@ private:
     QJsonObject handleMouseScroll(const QJsonObject& params);
     QJsonObject handleKeyboardType(const QJsonObject& params);
     QJsonObject handleKeyboardHotkey(const QJsonObject& params);
+    QJsonObject handleMouseDrag(const QJsonObject& params);
+    QJsonObject handleKeyPress(const QJsonObject& params);
+    QJsonObject handleKeyRelease(const QJsonObject& params);
     QJsonObject handleGetClipboard(const QJsonObject& params);
     QJsonObject handleSetClipboard(const QJsonObject& params);
     QJsonObject handleGetScreenSize(const QJsonObject& params);
+
+    static int keyNameToScanCode(const QString& keyName);
 
     // Helpers
     QJsonObject makeResult(const QJsonObject& data);

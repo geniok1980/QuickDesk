@@ -119,6 +119,15 @@ void ApiHandler::registerHandlers() {
     m_handlers["keyboardHotkey"] = [this](const QJsonObject& p) {
         return handleKeyboardHotkey(p);
     };
+    m_handlers["mouseDrag"] = [this](const QJsonObject& p) {
+        return handleMouseDrag(p);
+    };
+    m_handlers["keyPress"] = [this](const QJsonObject& p) {
+        return handleKeyPress(p);
+    };
+    m_handlers["keyRelease"] = [this](const QJsonObject& p) {
+        return handleKeyRelease(p);
+    };
     m_handlers["getClipboard"] = [this](const QJsonObject& p) {
         return handleGetClipboard(p);
     };
@@ -486,19 +495,8 @@ QJsonObject ApiHandler::handleKeyboardType(const QJsonObject& params) {
     return makeResult(data);
 }
 
-QJsonObject ApiHandler::handleKeyboardHotkey(const QJsonObject& params) {
-    auto connectionId = params["connectionId"].toString();
-    if (connectionId.isEmpty()) {
-        return makeError(400, "Missing 'connectionId'");
-    }
-
-    auto keysArray = params["keys"].toArray();
-    if (keysArray.isEmpty()) {
-        return makeError(400, "Missing 'keys' array");
-    }
-
-    // Map key names to Windows scan codes
-    static const QMap<QString, int> kKeyNameToScanCode = {
+int ApiHandler::keyNameToScanCode(const QString& keyName) {
+    static const QMap<QString, int> kMap = {
         // Modifier keys
         {"ctrl",   0x1D}, {"lctrl",    0x1D}, {"rctrl",  0xE01D},
         {"shift",  0x2A}, {"lshift",   0x2A}, {"rshift", 0x36},
@@ -556,28 +554,112 @@ QJsonObject ApiHandler::handleKeyboardHotkey(const QJsonObject& params) {
         {"capslock", 0x3A},
         {"numlock", 0x45},
     };
+    auto it = kMap.find(keyName.toLower().trimmed());
+    return (it != kMap.end()) ? it.value() : -1;
+}
+
+QJsonObject ApiHandler::handleKeyboardHotkey(const QJsonObject& params) {
+    auto connectionId = params["connectionId"].toString();
+    if (connectionId.isEmpty()) {
+        return makeError(400, "Missing 'connectionId'");
+    }
+
+    auto keysArray = params["keys"].toArray();
+    if (keysArray.isEmpty()) {
+        return makeError(400, "Missing 'keys' array");
+    }
 
     QList<int> scanCodes;
     for (const auto& key : keysArray) {
-        auto keyName = key.toString().toLower().trimmed();
-        auto it = kKeyNameToScanCode.find(keyName);
-        if (it == kKeyNameToScanCode.end()) {
-            return makeError(400, QString("Unknown key: '%1'").arg(keyName));
+        int sc = keyNameToScanCode(key.toString());
+        if (sc < 0) {
+            return makeError(400, QString("Unknown key: '%1'").arg(key.toString()));
         }
-        scanCodes.append(it.value());
+        scanCodes.append(sc);
     }
 
     auto* client = m_controller->clientManager();
     int lockStates = 0;
 
-    // Press all keys in order
     for (int sc : scanCodes) {
         client->sendKeyPress(connectionId, sc, lockStates);
     }
-    // Release in reverse order
     for (int i = scanCodes.size() - 1; i >= 0; --i) {
         client->sendKeyRelease(connectionId, scanCodes[i], lockStates);
     }
+
+    QJsonObject data;
+    data["success"] = true;
+    return makeResult(data);
+}
+
+QJsonObject ApiHandler::handleMouseDrag(const QJsonObject& params) {
+    auto connectionId = params["connectionId"].toString();
+    if (connectionId.isEmpty()) {
+        return makeError(400, "Missing 'connectionId'");
+    }
+
+    int startX = params["startX"].toInt();
+    int startY = params["startY"].toInt();
+    int endX   = params["endX"].toInt();
+    int endY   = params["endY"].toInt();
+    auto buttonStr = params["button"].toString("left");
+
+    int button = 1;
+    if (buttonStr == "right") button = 2;
+    else if (buttonStr == "middle") button = 4;
+
+    auto* client = m_controller->clientManager();
+    client->sendMouseMove(connectionId, startX, startY);
+    client->sendMousePress(connectionId, startX, startY, button);
+    client->sendMouseMove(connectionId, endX, endY);
+    client->sendMouseRelease(connectionId, endX, endY, button);
+
+    QJsonObject data;
+    data["success"] = true;
+    return makeResult(data);
+}
+
+QJsonObject ApiHandler::handleKeyPress(const QJsonObject& params) {
+    auto connectionId = params["connectionId"].toString();
+    if (connectionId.isEmpty()) {
+        return makeError(400, "Missing 'connectionId'");
+    }
+
+    auto keyName = params["key"].toString();
+    if (keyName.isEmpty()) {
+        return makeError(400, "Missing 'key'");
+    }
+
+    int sc = keyNameToScanCode(keyName);
+    if (sc < 0) {
+        return makeError(400, QString("Unknown key: '%1'").arg(keyName));
+    }
+
+    m_controller->clientManager()->sendKeyPress(connectionId, sc, 0);
+
+    QJsonObject data;
+    data["success"] = true;
+    return makeResult(data);
+}
+
+QJsonObject ApiHandler::handleKeyRelease(const QJsonObject& params) {
+    auto connectionId = params["connectionId"].toString();
+    if (connectionId.isEmpty()) {
+        return makeError(400, "Missing 'connectionId'");
+    }
+
+    auto keyName = params["key"].toString();
+    if (keyName.isEmpty()) {
+        return makeError(400, "Missing 'key'");
+    }
+
+    int sc = keyNameToScanCode(keyName);
+    if (sc < 0) {
+        return makeError(400, QString("Unknown key: '%1'").arg(keyName));
+    }
+
+    m_controller->clientManager()->sendKeyRelease(connectionId, sc, 0);
 
     QJsonObject data;
     data["success"] = true;
