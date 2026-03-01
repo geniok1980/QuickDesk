@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "quickdesk": {
+      "command": "quickdesk-mcp",
+      "args": [],
+      "env": {
+        "QUICKDESK_TOKEN": "your-secret-token-here"
+      }
+    }
+  }
+}

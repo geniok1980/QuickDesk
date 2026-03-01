@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "quickdesk": {
+      "command": "quickdesk-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

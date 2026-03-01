@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "quickdesk": {
+      "command": "/Applications/QuickDesk.app/Contents/MacOS/quickdesk-mcp",
+      "args": []
+    }
+  }
+}

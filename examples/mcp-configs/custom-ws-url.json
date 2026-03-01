@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "quickdesk": {
+      "command": "quickdesk-mcp",
+      "args": ["--ws-url", "ws://192.168.1.100:9800"],
+      "env": {}
+    }
+  }
+}
