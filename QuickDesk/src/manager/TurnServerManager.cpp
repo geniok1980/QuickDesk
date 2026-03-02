@@ -7,23 +7,9 @@
 
 namespace quickdesk {
 
-namespace {
-const char* kBuiltinStunUrls[] = {
-    "stun:stun.hot-chilli.net",
-    "stun:stun.internetcalls.com",
-    "stun:stun.miwifi.com"
-};
-}
-
 TurnServerManager::TurnServerManager(QObject* parent)
     : QObject(parent)
 {
-    for (const char* url : kBuiltinStunUrls) {
-        QJsonObject server;
-        server["urls"] = QJsonArray{QString::fromLatin1(url)};
-        m_builtinStunServers.append(server);
-    }
-
     loadSettings();
 }
 
@@ -44,21 +30,10 @@ void TurnServerManager::setServers(const QJsonArray& servers)
 
 QJsonObject TurnServerManager::getEffectiveIceConfig() const
 {
-    QJsonArray merged;
-
-    for (const auto& s : m_builtinStunServers) {
-        merged.append(s);
-    }
-    for (const auto& s : m_userServers) {
-        merged.append(s);
-    }
-
-    QString source = hasTurnServer(m_userServers) ? "user-turn+stun" : "builtin-stun";
-
     QJsonObject config;
-    config["iceServers"] = merged;
+    config["iceServers"] = m_userServers;
 
-    LOG_INFO("ICE config [source={}]: {} server(s)", source.toStdString(), merged.size());
+    LOG_INFO("ICE config: {} user-configured server(s)", m_userServers.size());
     return config;
 }
 
@@ -143,27 +118,6 @@ bool TurnServerManager::validateServerUrl(const QString& url)
     
     QUrl qurl(url);
     return qurl.isValid();
-}
-
-bool TurnServerManager::hasTurnServer() const
-{
-    return hasTurnServer(m_userServers);
-}
-
-bool TurnServerManager::hasTurnServer(const QJsonArray& servers) const
-{
-    for (const auto& serverValue : servers) {
-        auto serverObj = serverValue.toObject();
-        auto urls = serverObj.value("urls").toArray();
-        for (const auto& urlValue : urls) {
-            QString url = urlValue.toString();
-            if (url.startsWith("turn:", Qt::CaseInsensitive) ||
-                url.startsWith("turns:", Qt::CaseInsensitive)) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 void TurnServerManager::loadSettings()

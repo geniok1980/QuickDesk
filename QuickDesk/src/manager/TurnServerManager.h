@@ -12,15 +12,11 @@
 namespace quickdesk {
 
 /**
- * @brief Manages STUN/TURN server configuration from two sources:
+ * @brief Manages user-configured STUN/TURN servers (persisted locally).
  * 
- *   1. Built-in STUN servers (always included)
- *   2. User-configured servers (configured in UI, persisted locally; always included)
- * 
- * TURN credential fetching is handled on the Chromium side by
- * QuickDeskIceConfigFetcher, which contacts the signaling server directly.
- * This class only provides the initial STUN/user config to pass via
- * native messaging.
+ * STUN/TURN with credentials are fetched from the signaling server by
+ * QuickDeskIceConfigFetcher on the Chromium side. This class only provides
+ * optional user overrides to pass via native messaging.
  */
 class TurnServerManager : public QObject {
     Q_OBJECT
@@ -36,8 +32,8 @@ public:
     /**
      * @brief Get the ICE config object for native messaging
      * 
-     * Returns QJsonObject with "iceServers" containing built-in STUN + user servers.
-     * Does NOT include server-fetched TURN — that is handled by Chromium.
+     * Returns QJsonObject with "iceServers" containing user-configured servers only.
+     * STUN/TURN with credentials are fetched by Chromium from the signaling server.
      */
     Q_INVOKABLE QJsonObject getEffectiveIceConfig() const;
     
@@ -49,9 +45,6 @@ public:
     Q_INVOKABLE void removeServer(int index);
     Q_INVOKABLE void clearServers();
     Q_INVOKABLE static bool validateServerUrl(const QString& url);
-    
-    Q_INVOKABLE bool hasTurnServer() const;
-    Q_INVOKABLE bool hasTurnServer(const QJsonArray& servers) const;
 
     void loadSettings();
     void saveSettings();
@@ -60,10 +53,6 @@ signals:
     void serversChanged();
 
 private:
-    // Built-in STUN servers (always sent to Chromium)
-    QJsonArray m_builtinStunServers;
-
-    // User-configured servers (always sent to Chromium)
     QJsonArray m_userServers;
 };
 
