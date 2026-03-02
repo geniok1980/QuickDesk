@@ -157,6 +157,7 @@ qt_add_qml_module(QuickDesk
         qml/pages/RemoteControlPage.qml
         qml/pages/SettingsPage.qml
         qml/pages/AboutPage.qml
+        qml/pages/McpConfigPopup.qml
         qml/component/Theme.qml
         qml/component/FluentIconGlyph.qml
         qml/component/QDButton.qml

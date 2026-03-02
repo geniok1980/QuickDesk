@@ -38,6 +38,12 @@ public:
 
     void broadcastEvent(const QString& event, const QJsonObject& data);
 
+    int authenticatedClientCount() const;
+
+signals:
+    void listeningChanged(bool listening);
+    void authenticatedClientCountChanged(int count);
+
 private slots:
     void onNewConnection();
     void onTextMessageReceived(const QString& message);

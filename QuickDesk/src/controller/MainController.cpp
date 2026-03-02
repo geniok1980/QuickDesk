@@ -11,6 +11,12 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 
 namespace quickdesk {
 
@@ -138,6 +144,10 @@ MainController::MainController(QObject* parent)
 
     // WebSocket API Server
     m_wsApiServer = std::make_unique<WebSocketApiServer>(this, this);
+    connect(m_wsApiServer.get(), &WebSocketApiServer::listeningChanged,
+            this, &MainController::mcpServiceRunningChanged);
+    connect(m_wsApiServer.get(), &WebSocketApiServer::authenticatedClientCountChanged,
+            this, &MainController::mcpConnectedClientsChanged);
     setupWebSocketApiEvents();
 
     // Setup access code auto-refresh timer
@@ -778,6 +788,159 @@ void MainController::setupWebSocketApiEvents() {
             {"status", status}
         });
     });
+}
+
+// MCP Service
+bool MainController::mcpServiceRunning() const {
+    return m_wsApiServer && m_wsApiServer->isListening();
+}
+
+int MainController::mcpConnectedClients() const {
+    return m_wsApiServer ? m_wsApiServer->authenticatedClientCount() : 0;
+}
+
+int MainController::mcpPort() const {
+    return m_wsApiServer ? m_wsApiServer->port() : 0;
+}
+
+void MainController::startMcpService() {
+    if (m_wsApiServer && !m_wsApiServer->isListening()) {
+        if (!m_wsApiServer->start()) {
+            LOG_WARN("MCP service failed to start");
+        }
+    }
+}
+
+void MainController::stopMcpService() {
+    if (m_wsApiServer && m_wsApiServer->isListening()) {
+        m_wsApiServer->stop();
+    }
+}
+
+QString MainController::getMcpBinaryPath() const {
+    auto appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+    auto mcpPath = appDir + "/quickdesk-mcp.exe";
+#elif defined(Q_OS_MAC)
+    // appDir = Contents/MacOS, mcp binary is in Contents/Frameworks
+    auto mcpPath = appDir + "/../Frameworks/quickdesk-mcp";
+#else
+    auto mcpPath = appDir + "/quickdesk-mcp";
+#endif
+    return QDir::toNativeSeparators(QDir::cleanPath(mcpPath));
+}
+
+QString MainController::generateMcpConfig(const QString& clientType) const {
+    auto mcpPath = getMcpBinaryPath();
+    QJsonObject serverConfig;
+    serverConfig["command"] = mcpPath;
+    serverConfig["args"] = QJsonArray();
+
+    QJsonObject mcpServers;
+    mcpServers["quickdesk"] = serverConfig;
+
+    QJsonObject root;
+
+    if (clientType == "cursor") {
+        root["mcpServers"] = mcpServers;
+    } else if (clientType == "claude") {
+        root["mcpServers"] = mcpServers;
+    } else if (clientType == "windsurf") {
+        root["mcpServers"] = mcpServers;
+    } else {
+        root["mcpServers"] = mcpServers;
+    }
+
+    return QString::fromUtf8(
+        QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+void MainController::copyMcpConfig(const QString& clientType) {
+    auto config = generateMcpConfig(clientType);
+    auto* clipboard = QGuiApplication::clipboard();
+    if (clipboard) {
+        clipboard->setText(config);
+    }
+}
+
+QString MainController::getMcpConfigPath(const QString& clientType) const {
+    if (clientType == "claude") {
+#ifdef Q_OS_WIN
+        auto appData = QStandardPaths::writableLocation(
+            QStandardPaths::GenericDataLocation);
+        return QDir::toNativeSeparators(
+            appData + "/../Roaming/Claude/claude_desktop_config.json");
+#elif defined(Q_OS_MAC)
+        return QDir::homePath() +
+               "/Library/Application Support/Claude/claude_desktop_config.json";
+#endif
+    }
+    return QString();
+}
+
+bool MainController::isClientInstalled(const QString& clientType) const {
+    if (clientType == "claude") {
+#ifdef Q_OS_WIN
+        auto programFiles = QDir::toNativeSeparators(
+            qEnvironmentVariable("ProgramFiles"));
+        auto localAppData = QDir::toNativeSeparators(
+            qEnvironmentVariable("LOCALAPPDATA"));
+        return QFileInfo::exists(programFiles + "\\Claude\\Claude.exe") ||
+               QFileInfo::exists(localAppData + "\\Claude\\Claude.exe") ||
+               QFileInfo::exists(localAppData +
+                                 "\\Programs\\claude-desktop\\Claude.exe");
+#elif defined(Q_OS_MAC)
+        return QFileInfo::exists("/Applications/Claude.app");
+#endif
+    }
+    return false;
+}
+
+int MainController::writeMcpConfig(const QString& clientType) {
+    if (clientType != "claude") {
+        return 2;
+    }
+
+    if (!isClientInstalled(clientType)) {
+        LOG_WARN("Claude Desktop not found, cannot auto-configure");
+        return 1;
+    }
+
+    auto configPath = getMcpConfigPath(clientType);
+    if (configPath.isEmpty()) {
+        return 2;
+    }
+
+    QJsonObject existingRoot;
+    QFile file(configPath);
+    if (file.exists() && file.open(QIODevice::ReadOnly)) {
+        auto doc = QJsonDocument::fromJson(file.readAll());
+        if (doc.isObject()) {
+            existingRoot = doc.object();
+        }
+        file.close();
+    }
+
+    auto mcpPath = getMcpBinaryPath();
+    QJsonObject serverConfig;
+    serverConfig["command"] = mcpPath;
+    serverConfig["args"] = QJsonArray();
+
+    auto servers = existingRoot["mcpServers"].toObject();
+    servers["quickdesk"] = serverConfig;
+    existingRoot["mcpServers"] = servers;
+
+    QDir().mkpath(QFileInfo(configPath).absolutePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        LOG_ERROR("Failed to write MCP config to: {}",
+                  configPath.toStdString());
+        return 2;
+    }
+
+    file.write(QJsonDocument(existingRoot).toJson(QJsonDocument::Indented));
+    file.close();
+    LOG_INFO("MCP config written to: {}", configPath.toStdString());
+    return 0;
 }
 
 } // namespace quickdesk

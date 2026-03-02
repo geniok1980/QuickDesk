@@ -51,6 +51,11 @@ class MainController : public QObject {
     Q_PROPERTY(QString accessCode READ accessCode NOTIFY accessCodeChanged)
     Q_PROPERTY(bool isHostConnected READ isHostConnected NOTIFY hostConnectionChanged)
     
+    // MCP Service status
+    Q_PROPERTY(bool mcpServiceRunning READ mcpServiceRunning NOTIFY mcpServiceRunningChanged)
+    Q_PROPERTY(int mcpConnectedClients READ mcpConnectedClients NOTIFY mcpConnectedClientsChanged)
+    Q_PROPERTY(int mcpPort READ mcpPort NOTIFY mcpServiceRunningChanged)
+
     // Signaling state properties (convenience for QML)
     Q_PROPERTY(QString signalingState READ signalingState NOTIFY signalingStateChanged)
     Q_PROPERTY(int signalingRetryCount READ signalingRetryCount NOTIFY signalingStateChanged)
@@ -133,10 +138,27 @@ public:
     ProcessStatus::Status clientProcessStatus() const;
     ServerStatus::Status clientServerStatus() const;
     
+    // MCP service getters
+    bool mcpServiceRunning() const;
+    int mcpConnectedClients() const;
+    int mcpPort() const;
+
     // Access code auto-refresh info
     QString nextAccessCodeRefreshTime() const;
 
     Q_INVOKABLE void showRemoteWindowForConnection(const QString& connectionId, const QString& deviceId);
+
+    // MCP Service control
+    Q_INVOKABLE void startMcpService();
+    Q_INVOKABLE void stopMcpService();
+    Q_INVOKABLE QString getMcpBinaryPath() const;
+    Q_INVOKABLE QString generateMcpConfig(const QString& clientType) const;
+    Q_INVOKABLE void copyMcpConfig(const QString& clientType);
+    Q_INVOKABLE QString getMcpConfigPath(const QString& clientType) const;
+    Q_INVOKABLE bool isClientInstalled(const QString& clientType) const;
+
+    // Returns: 0 = success, 1 = client not installed, 2 = write failed
+    Q_INVOKABLE int writeMcpConfig(const QString& clientType);
 
 signals:
     void initializationFailed(const QString& error);
@@ -152,6 +174,8 @@ signals:
     void presetLoadFailed(const QString& error);
     void forceUpgradeRequired(const QString& minVersion);
     void requestShowRemoteWindow(const QString& connectionId, const QString& deviceId);
+    void mcpServiceRunningChanged();
+    void mcpConnectedClientsChanged();
 
 private slots:
     void onHostProcessStarted();

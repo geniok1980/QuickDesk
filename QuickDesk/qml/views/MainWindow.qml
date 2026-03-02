@@ -596,6 +596,73 @@ ApplicationWindow {
                 }
             }
             
+            QDSeparator {}
+            
+            // MCP (AI) Service Status - clickable indicator
+            Rectangle {
+                id: mcpIndicator
+                width: mcpRow.width + Theme.spacingSmall * 2
+                height: parent.height
+                color: mcpMouseArea.containsMouse ? Theme.surfaceHover : "transparent"
+                radius: Theme.radiusSmall
+                
+                Behavior on color {
+                    ColorAnimation { duration: Theme.animationDurationFast }
+                }
+                
+                Row {
+                    id: mcpRow
+                    anchors.centerIn: parent
+                    spacing: Theme.spacingXSmall
+                    
+                    Text {
+                        text: FluentIconGlyph.robotGlyph
+                        font.family: "Segoe Fluent Icons"
+                        font.pixelSize: 12
+                        color: root.mainController && root.mainController.mcpServiceRunning
+                               ? Theme.primary : Theme.textDisabled
+                        anchors.verticalCenter: parent.verticalCenter
+                        
+                        SequentialAnimation on opacity {
+                            running: root.mainController && root.mainController.mcpServiceRunning
+                                     && root.mainController.mcpConnectedClients > 0
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
+                        }
+                    }
+                    
+                    Text {
+                        text: {
+                            if (!root.mainController) return "AI"
+                            if (!root.mainController.mcpServiceRunning) return qsTr("AI: Off")
+                            var clients = root.mainController.mcpConnectedClients
+                            if (clients > 0) return qsTr("AI: %1 agent(s)").arg(clients)
+                            return qsTr("AI: Ready")
+                        }
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.mainController && root.mainController.mcpServiceRunning
+                               ? Theme.primary : Theme.textSecondary
+                        font.weight: root.mainController && root.mainController.mcpServiceRunning
+                                     ? Font.DemiBold : Font.Normal
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+                
+                MouseArea {
+                    id: mcpMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: mcpConfigPopup.open()
+                }
+                
+                QDToolTip {
+                    visible: mcpMouseArea.containsMouse
+                    text: qsTr("Click to configure AI integration")
+                }
+            }
+            
             // Spacer
             Item {
                 Layout.fillWidth: true
@@ -654,5 +721,14 @@ ApplicationWindow {
         title: qsTr("Upgrade Required")
         buttons: QDMessageBox.Buttons.Ok
         onClosed: Qt.quit()
+    }
+    
+    McpConfigPopup {
+        id: mcpConfigPopup
+        mainController: root.mainController
+        
+        onShowToast: function(message, toastType) {
+            toast.show(message, toastType)
+        }
     }
 }

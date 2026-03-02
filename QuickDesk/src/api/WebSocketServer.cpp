@@ -47,6 +47,7 @@ bool WebSocketApiServer::start(quint16 port, const QHostAddress& address) {
 
     LOG_INFO("WebSocket API server listening on {}:{}",
              address.toString().toStdString(), m_server->serverPort());
+    emit listeningChanged(true);
     return true;
 }
 
@@ -67,6 +68,7 @@ void WebSocketApiServer::stop() {
     delete m_server;
     m_server = nullptr;
     LOG_INFO("WebSocket API server stopped");
+    emit listeningChanged(false);
 }
 
 bool WebSocketApiServer::isListening() const {
@@ -80,6 +82,10 @@ quint16 WebSocketApiServer::port() const {
 void WebSocketApiServer::setAuthToken(const QString& token) {
     m_authToken = token;
     m_security->setFullAccessToken(token);
+}
+
+int WebSocketApiServer::authenticatedClientCount() const {
+    return m_authenticatedClients.size();
 }
 
 void WebSocketApiServer::broadcastEvent(const QString& event,
@@ -127,6 +133,7 @@ void WebSocketApiServer::onNewConnection() {
 
         if (m_authToken.isEmpty()) {
             m_authenticatedClients.insert(client);
+            emit authenticatedClientCountChanged(m_authenticatedClients.size());
         }
 
         m_security->recordActivity(info.id);
@@ -265,11 +272,14 @@ void WebSocketApiServer::onClientDisconnected() {
     auto cid = clientId(client);
     m_security->removeClient(cid);
     m_clients.remove(client);
-    m_authenticatedClients.remove(client);
+    bool wasAuthenticated = m_authenticatedClients.remove(client);
     m_clientIdMap.remove(cid);
     m_clientInfo.remove(client);
     client->deleteLater();
     LOG_INFO("WebSocket API client disconnected: {}", cid.toStdString());
+    if (wasAuthenticated) {
+        emit authenticatedClientCountChanged(m_authenticatedClients.size());
+    }
 }
 
 void WebSocketApiServer::onSessionExpired(const QString& expiredClientId) {
@@ -335,6 +345,7 @@ bool WebSocketApiServer::authenticateClient(QWebSocket* client,
 
     m_authenticatedClients.insert(client);
     m_clientInfo[client].permission = permission;
+    emit authenticatedClientCountChanged(m_authenticatedClients.size());
 
     auto cid = clientId(client);
     m_security->logAudit(cid, "auth", {}, true);

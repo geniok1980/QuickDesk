@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "quickdesk": {
-      "command": "/Applications/QuickDesk.app/Contents/MacOS/quickdesk-mcp",
+      "command": "/Applications/QuickDesk.app/Contents/Frameworks/quickdesk-mcp",
       "args": []
     }
   }
