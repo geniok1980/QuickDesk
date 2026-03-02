@@ -110,7 +110,7 @@ fi
 echo "[*] copying quickdesk-mcp..."
 mcp_output="$script_path/../output/arm64/$build_mode/quickdesk-mcp"
 if [ -f "$mcp_output" ]; then
-    cp "$mcp_output" "$macos_dir/"
+    cp "$mcp_output" "$frameworks_dir/"
     echo "[*] copied quickdesk-mcp from output"
 else
     echo "[!] warning: quickdesk-mcp not found (run build_mcp_mac.sh first)"
@@ -224,8 +224,8 @@ fi
 if [ -f "$frameworks_dir/quickdesk_client" ]; then
     codesign --force --sign - "$frameworks_dir/quickdesk_client"
 fi
-if [ -f "$macos_dir/quickdesk-mcp" ]; then
-    codesign --force --sign - "$macos_dir/quickdesk-mcp"
+if [ -f "$frameworks_dir/quickdesk-mcp" ]; then
+    codesign --force --sign - "$frameworks_dir/quickdesk-mcp"
 fi
 find "$frameworks_dir" -name "*.framework" -maxdepth 1 -exec codesign --force --sign - {} \;
 find "$frameworks_dir" -name "*.dylib" -maxdepth 1 -exec codesign --force --sign - {} \;
