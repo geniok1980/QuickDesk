@@ -30,10 +30,13 @@ void TurnServerManager::setServers(const QJsonArray& servers)
 
 QJsonObject TurnServerManager::getEffectiveIceConfig() const
 {
+    LOG_INFO("ICE config: {} user-configured server(s)", m_userServers.size());
+    if (m_userServers.isEmpty()) {
+        return QJsonObject();
+    }
+
     QJsonObject config;
     config["iceServers"] = m_userServers;
-
-    LOG_INFO("ICE config: {} user-configured server(s)", m_userServers.size());
     return config;
 }
 
