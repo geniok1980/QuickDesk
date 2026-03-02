@@ -81,7 +81,7 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: qsTr("QuickDesk is an open-source remote desktop application built on Chromium Remoting technology, providing secure, high-performance remote control capabilities.")
+                            text: qsTr("The first AI-native remote desktop. Built-in MCP Server lets any AI agent see and control remote computers. Built on Chromium Remoting — industrial-grade performance, security, and stability refined by Google for over a decade.")
                             font.pixelSize: Theme.fontSizeMedium
                             color: Theme.text
                             wrapMode: Text.WordWrap
