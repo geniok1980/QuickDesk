@@ -5,7 +5,7 @@
 #include "infra/log/log.h"
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QCoreApplication>
+#include "infra/env/applicationcontext.h"
 
 namespace quickdesk {
 
@@ -17,7 +17,7 @@ WebSocketApiServer::WebSocketApiServer(MainController* controller,
     connect(m_security, &SecurityManager::sessionExpired,
             this, &WebSocketApiServer::onSessionExpired);
 
-    auto logDir = QCoreApplication::applicationDirPath() + "/logs";
+    auto logDir = infra::ApplicationContext::instance().logPath();
     m_security->initAuditLog(logDir);
 }
 

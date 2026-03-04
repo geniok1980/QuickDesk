@@ -6,28 +6,62 @@
 
 namespace quickdesk {
 
+// --- Transport 1: QProcess (stdin/stdout) ---
+
 NativeMessaging::NativeMessaging(QProcess* process, QObject* parent)
     : QObject(parent)
     , m_process(process)
 {
     Q_ASSERT(process);
-    
     connect(m_process, &QProcess::readyReadStandardOutput,
             this, &NativeMessaging::onReadyRead);
     connect(m_process, &QProcess::errorOccurred,
             this, &NativeMessaging::onProcessError);
 }
 
+// --- Transport 2: dual QLocalSocket (separate read/write Named Pipes) ---
+
+NativeMessaging::NativeMessaging(QLocalSocket* readSocket,
+                                 QLocalSocket* writeSocket,
+                                 QObject* parent)
+    : QObject(parent)
+    , m_readSocket(readSocket)
+    , m_writeSocket(writeSocket)
+{
+    Q_ASSERT(readSocket);
+    Q_ASSERT(writeSocket);
+    connect(m_readSocket, &QLocalSocket::readyRead,
+            this, &NativeMessaging::onReadyRead);
+    connect(m_readSocket, &QLocalSocket::errorOccurred,
+            this, &NativeMessaging::onSocketError);
+    connect(m_writeSocket, &QLocalSocket::errorOccurred,
+            this, &NativeMessaging::onSocketError);
+}
+
+// --- Shared implementation ---
+
 void NativeMessaging::sendMessage(const QJsonObject& message)
 {
-    if (!m_process || m_process->state() != QProcess::Running) {
-        emit errorOccurred("Process is not running");
+    QByteArray encoded = encodeMessage(message);
+    qint64 written = -1;
+
+    if (m_process) {
+        if (m_process->state() != QProcess::Running) {
+            emit errorOccurred("Process is not running");
+            return;
+        }
+        written = m_process->write(encoded);
+    } else if (m_writeSocket) {
+        if (m_writeSocket->state() != QLocalSocket::ConnectedState) {
+            emit errorOccurred("Socket is not connected");
+            return;
+        }
+        written = m_writeSocket->write(encoded);
+    } else {
+        emit errorOccurred("No transport configured (process or socket)");
         return;
     }
 
-    QByteArray encoded = encodeMessage(message);
-    qint64 written = m_process->write(encoded);
-    
     if (written != encoded.size()) {
         emit errorOccurred(QString("Failed to write message: wrote %1 of %2 bytes")
                           .arg(written).arg(encoded.size()));
@@ -36,12 +70,21 @@ void NativeMessaging::sendMessage(const QJsonObject& message)
 
 bool NativeMessaging::isReady() const
 {
-    return m_process && m_process->state() == QProcess::Running;
+    if (m_process)
+        return m_process->state() == QProcess::Running;
+    if (m_readSocket && m_writeSocket) {
+        return m_readSocket->state() == QLocalSocket::ConnectedState &&
+               m_writeSocket->state() == QLocalSocket::ConnectedState;
+    }
+    return false;
 }
 
 void NativeMessaging::onReadyRead()
 {
-    m_buffer.append(m_process->readAllStandardOutput());
+    if (m_process)
+        m_buffer.append(m_process->readAllStandardOutput());
+    else if (m_readSocket)
+        m_buffer.append(m_readSocket->readAll());
     parseBuffer();
 }
 
@@ -68,6 +111,15 @@ void NativeMessaging::onProcessError(QProcess::ProcessError error)
         errorMsg = "Unknown process error";
         break;
     }
+    emit errorOccurred(errorMsg);
+}
+
+void NativeMessaging::onSocketError(QLocalSocket::LocalSocketError error)
+{
+    auto* socket = qobject_cast<QLocalSocket*>(sender());
+    QString errorMsg = socket
+        ? socket->errorString()
+        : QString("Socket error %1").arg(static_cast<int>(error));
     emit errorOccurred(errorMsg);
 }
 

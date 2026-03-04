@@ -6,13 +6,16 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#include <winsvc.h>
+#endif
 
 namespace quickdesk {
 
 ProcessManager::ProcessManager(QObject* parent)
     : QObject(parent)
 {
-    // Setup restart timers
     m_hostRestartTimer.setSingleShot(true);
     connect(&m_hostRestartTimer, &QTimer::timeout,
             this, &ProcessManager::onHostRestartTimer);
@@ -20,13 +23,17 @@ ProcessManager::ProcessManager(QObject* parent)
     m_clientRestartTimer.setSingleShot(true);
     connect(&m_clientRestartTimer, &QTimer::timeout,
             this, &ProcessManager::onClientRestartTimer);
+
+    m_pipeConnectTimer.setSingleShot(true);
+    connect(&m_pipeConnectTimer, &QTimer::timeout,
+            this, &ProcessManager::onServicePipeError);
 }
 
 ProcessManager::~ProcessManager()
 {
-    // Stop timers first
     m_hostRestartTimer.stop();
     m_clientRestartTimer.stop();
+    m_pipeConnectTimer.stop();
     
     // Disable auto-restart during destruction
     m_hostAutoRestart = false;
@@ -37,13 +44,29 @@ ProcessManager::~ProcessManager()
 
 bool ProcessManager::startHostProcess()
 {
-    if (isHostRunning()) {
-        LOG_WARN("Host process is already running");
+    if (isHostRunning() || m_serviceConnecting) {
+        LOG_WARN("Host process is already running or connecting");
         return true;
     }
 
+    setHostProcessStatus(ProcessStatus::Starting);
+
+#ifdef Q_OS_WIN
+    if (isHostServiceRunning()) {
+        LOG_INFO("QuickDeskHost service detected, connecting via Named Pipe");
+        connectToHostServiceAsync();
+        return true;
+    }
+#endif
+
+    return startHostAsChildProcess();
+}
+
+bool ProcessManager::startHostAsChildProcess()
+{
     if (m_hostExePath.isEmpty()) {
         emit hostProcessError("Host executable path not set");
+        setHostProcessStatus(ProcessStatus::NotStarted);
         return false;
     }
 
@@ -59,7 +82,6 @@ bool ProcessManager::startHostProcess()
     connect(m_hostProcess.get(), &QProcess::errorOccurred,
             this, &ProcessManager::onHostProcessErrorOccurred);
 
-    setHostProcessStatus(ProcessStatus::Starting);
     if (!startProcess(m_hostProcess.get(), m_hostExePath, "Host", m_logDir)) {
         m_hostProcess.reset();
         setHostProcessStatus(ProcessStatus::NotStarted);
@@ -107,10 +129,28 @@ void ProcessManager::stopHostProcess()
 {
     m_hostRestartTimer.stop();
     m_hostStoppingIntentionally = true;
+
+    // Cancel pending async connection.
+    if (m_serviceConnecting) {
+        m_serviceConnecting = false;
+        m_pipeConnectTimer.stop();
+    }
+
+    m_hostLaunchMode = HostLaunchMode::Unknown;
+    emit hostLaunchModeChanged();
+
+    // Service mode: disconnect both sockets.
+    if (m_hostReadSocket || m_hostWriteSocket) {
+        LOG_INFO("Disconnecting from host service pipes...");
+        cleanupServiceConnection();
+        m_hostRestartCount = 0;
+        setHostProcessStatus(ProcessStatus::NotStarted);
+        return;
+    }
     
     if (m_hostProcess && m_hostProcess->state() != QProcess::NotRunning) {
         LOG_INFO("begin stop host process...");
-        m_hostProcess->closeWriteChannel(); // Close stdin to trigger graceful exit
+        m_hostProcess->closeWriteChannel();
         bool finished = m_hostProcess->waitForFinished(10000);
         if (!finished) {
             LOG_WARN("Host process did not exit gracefully, terminating...");
@@ -173,6 +213,9 @@ void ProcessManager::stopAllProcesses()
 
 bool ProcessManager::isHostRunning() const
 {
+    if (m_hostMessaging && m_hostReadSocket &&
+        m_hostReadSocket->state() == QLocalSocket::ConnectedState)
+        return true;
     return m_hostProcess && m_hostProcess->state() == QProcess::Running;
 }
 
@@ -209,6 +252,16 @@ void ProcessManager::setLogDir(const QString& logDir)
 QString ProcessManager::logDir() const
 {
     return m_logDir;
+}
+
+void ProcessManager::setConfigDir(const QString& configDir)
+{
+    m_configDir = configDir;
+}
+
+QString ProcessManager::configDir() const
+{
+    return m_configDir;
 }
 
 QString ProcessManager::hostExePath() const
@@ -273,6 +326,11 @@ ProcessStatus::Status ProcessManager::hostProcessStatus() const
 ProcessStatus::Status ProcessManager::clientProcessStatus() const
 {
     return m_clientProcessStatus;
+}
+
+HostLaunchMode::Mode ProcessManager::hostLaunchMode() const
+{
+    return m_hostLaunchMode;
 }
 
 void ProcessManager::resetHostRetryCount()
@@ -414,6 +472,9 @@ void ProcessManager::onHostProcessStarted()
     // Create Native Messaging handler
     m_hostMessaging = std::make_unique<NativeMessaging>(m_hostProcess.get(), this);
     
+    m_hostRestartCount = 0;
+    m_hostLaunchMode = HostLaunchMode::ChildProcess;
+    emit hostLaunchModeChanged();
     setHostProcessStatus(ProcessStatus::Running);
     emit hostProcessStarted();
     LOG_INFO("Host process started successfully, PID: {}", m_hostProcess->processId());
@@ -459,6 +520,7 @@ void ProcessManager::onClientProcessStarted()
     // Create Native Messaging handler
     m_clientMessaging = std::make_unique<NativeMessaging>(m_clientProcess.get(), this);
     
+    m_clientRestartCount = 0;
     setClientProcessStatus(ProcessStatus::Running);
     emit clientProcessStarted();
     LOG_INFO("Client process started successfully, PID: {}", m_clientProcess->processId());
@@ -535,8 +597,10 @@ bool ProcessManager::startProcess(QProcess* process, const QString& exePath,
     // Prepare command line arguments
     QStringList arguments;
     if (!logDir.isEmpty()) {
-        // Use --log-dir=path format (Chromium style)
         arguments << QString("--log-dir=%1").arg(logDir);
+    }
+    if (!m_configDir.isEmpty()) {
+        arguments << QString("--config-dir=%1").arg(m_configDir);
     }
 
     process->setProgram(exePath);
@@ -643,6 +707,189 @@ void ProcessManager::setClientProcessStatus(ProcessStatus::Status status)
     if (m_clientProcessStatus != status) {
         m_clientProcessStatus = status;
         emit clientProcessStatusChanged();
+    }
+}
+
+bool ProcessManager::isHostServiceRunning() const
+{
+#ifdef Q_OS_WIN
+    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!scm)
+        return false;
+    SC_HANDLE svc = OpenServiceW(scm, L"QuickDeskHost", SERVICE_QUERY_STATUS);
+    bool running = false;
+    if (svc) {
+        SERVICE_STATUS ss;
+        if (QueryServiceStatus(svc, &ss) &&
+            ss.dwCurrentState == SERVICE_RUNNING) {
+            running = true;
+        }
+        CloseServiceHandle(svc);
+    }
+    CloseServiceHandle(scm);
+    return running;
+#else
+    return false;
+#endif
+}
+
+void ProcessManager::connectToHostServiceAsync()
+{
+#ifdef Q_OS_WIN
+    DWORD sessionId = 0;
+    ProcessIdToSessionId(GetCurrentProcessId(), &sessionId);
+    QString pipeBase = QString("quickdesk_host_%1").arg(sessionId);
+
+    m_hostReadSocket = std::make_unique<QLocalSocket>(this);
+    m_hostWriteSocket = std::make_unique<QLocalSocket>(this);
+    m_serviceConnecting = true;
+
+    QString readPipeName = pipeBase + "_out";
+    QString writePipeName = pipeBase + "_in";
+
+    LOG_INFO("Connecting to host service pipes: {}", pipeBase.toStdString());
+
+    // Phase 1: write socket connected → initiate read socket connection.
+    connect(m_hostWriteSocket.get(), &QLocalSocket::connected, this,
+        [this, readPipeName]() {
+            if (!m_serviceConnecting) return;
+            LOG_INFO("Write pipe connected, connecting read pipe...");
+            m_hostReadSocket->connectToServer(readPipeName, QIODevice::ReadOnly);
+        });
+
+    // Phase 2: read socket connected → both pipes ready.
+    connect(m_hostReadSocket.get(), &QLocalSocket::connected, this,
+        &ProcessManager::onServicePipeConnected);
+
+    // Error during connection phase or runtime.
+    auto handleError = [this](QLocalSocket::LocalSocketError err) {
+        if (m_serviceConnecting) {
+            // Defer cleanup: connectToServer() may still be on the call stack.
+            // Destroying the socket synchronously here causes use-after-free.
+            QTimer::singleShot(0, this, &ProcessManager::onServicePipeError);
+            return;
+        }
+        if (err != QLocalSocket::PeerClosedError) {
+            auto* sock = qobject_cast<QLocalSocket*>(sender());
+            QString msg = sock ? sock->errorString()
+                               : QStringLiteral("Unknown pipe error");
+            LOG_WARN("Host pipe error: {}", msg.toStdString());
+            emit hostProcessError(msg);
+        }
+    };
+    connect(m_hostWriteSocket.get(), &QLocalSocket::errorOccurred,
+            this, handleError);
+    connect(m_hostReadSocket.get(), &QLocalSocket::errorOccurred,
+            this, handleError);
+
+    // Runtime disconnect.
+    connect(m_hostReadSocket.get(), &QLocalSocket::disconnected, this,
+        [this]() {
+            if (m_serviceConnecting) return;
+            LOG_INFO("Disconnected from host service pipe");
+            cleanupServiceConnection();
+            emit hostProcessStopped(0);
+
+            if (m_hostStoppingIntentionally) {
+                m_hostStoppingIntentionally = false;
+                setHostProcessStatus(ProcessStatus::NotStarted);
+                return;
+            }
+
+            if (!m_hostAutoRestart) {
+                setHostProcessStatus(ProcessStatus::NotStarted);
+                return;
+            }
+
+            // Retry connecting to the service pipe as long as the service
+            // is running. The worker should restart quickly after a clean
+            // pipe disconnect.
+            if (isHostServiceRunning()) {
+                m_hostRestartCount++;
+                if (m_hostRestartCount <= MAX_RESTART_ATTEMPTS) {
+                    int delay = calculateRestartDelay(m_hostRestartCount);
+                    setHostProcessStatus(ProcessStatus::Restarting);
+                    LOG_INFO("Reconnecting to host service in {} ms (attempt {} of {})",
+                             delay, m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+                    emit hostProcessRestarting(m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+                    m_hostRestartTimer.start(delay);
+                    return;
+                }
+                LOG_WARN("Service pipe reconnect failed after {} attempts, "
+                         "falling back to child process", MAX_RESTART_ATTEMPTS);
+            }
+
+            // Service not running or retries exhausted — fallback.
+            m_hostRestartTimer.stop();
+            m_hostLaunchMode = HostLaunchMode::Unknown;
+            emit hostLaunchModeChanged();
+            startHostAsChildProcess();
+        });
+
+    m_pipeConnectTimer.start(5000);
+    m_hostWriteSocket->connectToServer(writePipeName, QIODevice::WriteOnly);
+#endif
+}
+
+void ProcessManager::onServicePipeConnected()
+{
+    if (!m_serviceConnecting) return;
+    m_serviceConnecting = false;
+    m_pipeConnectTimer.stop();
+
+    m_hostMessaging = std::make_unique<NativeMessaging>(
+        m_hostReadSocket.get(), m_hostWriteSocket.get(), this);
+    m_hostRestartCount = 0;
+    m_hostLaunchMode = HostLaunchMode::Service;
+    emit hostLaunchModeChanged();
+    setHostProcessStatus(ProcessStatus::Running);
+    emit hostProcessStarted();
+    LOG_INFO("Connected to host service via Named Pipes");
+}
+
+void ProcessManager::onServicePipeError()
+{
+    if (!m_serviceConnecting) return;
+    m_serviceConnecting = false;
+    m_pipeConnectTimer.stop();
+    cleanupServiceConnection();
+
+    // If service is still running, retry pipe connection instead of falling
+    // back to child process. The worker may be restarting after a clean exit.
+    if (isHostServiceRunning()) {
+        m_hostRestartCount++;
+        if (m_hostRestartCount <= MAX_RESTART_ATTEMPTS) {
+            int delay = calculateRestartDelay(m_hostRestartCount);
+            setHostProcessStatus(ProcessStatus::Restarting);
+            LOG_INFO("Service pipe not ready, retrying in {} ms (attempt {} of {})",
+                     delay, m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+            emit hostProcessRestarting(m_hostRestartCount, MAX_RESTART_ATTEMPTS);
+            m_hostRestartTimer.start(delay);
+            return;
+        }
+        LOG_WARN("Service pipe unavailable after {} retries, falling back to "
+                 "child process", MAX_RESTART_ATTEMPTS);
+    } else {
+        LOG_INFO("Service not running, starting as child process");
+    }
+
+    m_hostLaunchMode = HostLaunchMode::Unknown;
+    emit hostLaunchModeChanged();
+    startHostAsChildProcess();
+}
+
+void ProcessManager::cleanupServiceConnection()
+{
+    m_hostMessaging.reset();
+    if (m_hostReadSocket) {
+        m_hostReadSocket->disconnect(this);
+        m_hostReadSocket->disconnectFromServer();
+        m_hostReadSocket.reset();
+    }
+    if (m_hostWriteSocket) {
+        m_hostWriteSocket->disconnect(this);
+        m_hostWriteSocket->disconnectFromServer();
+        m_hostWriteSocket.reset();
     }
 }
 

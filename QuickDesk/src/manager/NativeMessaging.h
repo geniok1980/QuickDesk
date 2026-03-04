@@ -1,56 +1,48 @@
 // Copyright 2026 QuickDesk Authors
-// Native Messaging protocol implementation for Qt
+// Native Messaging protocol implementation for Qt.
+// Supports two transports:
+//   1. QProcess stdin/stdout  (child-process / development mode)
+//   2. Dual QLocalSocket      (service mode — separate read/write pipes)
 
 #ifndef QUICKDESK_MANAGER_NATIVEMESSAGING_H
 #define QUICKDESK_MANAGER_NATIVEMESSAGING_H
 
 #include <QObject>
 #include <QProcess>
+#include <QLocalSocket>
 #include <QJsonObject>
 #include <QByteArray>
 
 namespace quickdesk {
 
-/**
- * @brief Native Messaging protocol handler
- * 
- * Handles communication with Chrome Native Messaging protocol:
- * - 4-byte length prefix (little-endian)
- * - JSON message body
- */
 class NativeMessaging : public QObject {
     Q_OBJECT
 public:
+    // Transport 1: QProcess (stdin/stdout)
     explicit NativeMessaging(QProcess* process, QObject* parent = nullptr);
+
+    // Transport 2: dual QLocalSocket (separate read/write Named Pipes)
+    NativeMessaging(QLocalSocket* readSocket, QLocalSocket* writeSocket,
+                    QObject* parent = nullptr);
+
     ~NativeMessaging() override = default;
 
-    /**
-     * @brief Send a JSON message to the process
-     */
     void sendMessage(const QJsonObject& message);
-
-    /**
-     * @brief Check if the process is ready for communication
-     */
     bool isReady() const;
 
 signals:
-    /**
-     * @brief Emitted when a complete message is received
-     */
     void messageReceived(const QJsonObject& message);
-
-    /**
-     * @brief Emitted when an error occurs
-     */
     void errorOccurred(const QString& error);
 
 private slots:
     void onReadyRead();
     void onProcessError(QProcess::ProcessError error);
+    void onSocketError(QLocalSocket::LocalSocketError error);
 
 private:
-    QProcess* m_process;
+    QProcess* m_process = nullptr;
+    QLocalSocket* m_readSocket = nullptr;
+    QLocalSocket* m_writeSocket = nullptr;
     QByteArray m_buffer;
 
     void parseBuffer();

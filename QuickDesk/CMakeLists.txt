@@ -260,6 +260,7 @@ target_link_libraries(QuickDesk
     Qt6::Core
     Qt6::Widgets
     Qt6::Multimedia
+    Qt6::Network
     Qt6::WebSockets
     base
     infra

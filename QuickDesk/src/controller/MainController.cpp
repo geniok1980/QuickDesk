@@ -41,6 +41,8 @@ MainController::MainController(QObject* parent)
             this, &MainController::onHostProcessRestarting);
     connect(m_processManager.get(), &ProcessManager::hostProcessStatusChanged,
             this, &MainController::hostProcessStatusChanged);
+    connect(m_processManager.get(), &ProcessManager::hostLaunchModeChanged,
+            this, &MainController::hostLaunchModeChanged);
     
     connect(m_processManager.get(), &ProcessManager::clientProcessStarted,
             this, &MainController::onClientProcessStarted);
@@ -185,9 +187,11 @@ void MainController::initialize()
         LOG_WARN("Could not auto-detect all executable paths");
     }
 
-    // Set log directory from ApplicationContext
+    // Set log and config directories from ApplicationContext
     QString logDir = infra::ApplicationContext::instance().logPath();
     m_processManager->setLogDir(logDir);
+    QString configDir = infra::ApplicationContext::instance().localDataPath();
+    m_processManager->setConfigDir(configDir);
 
     // Start preset manager (polls server for preset config)
     m_presetManager->start();
@@ -210,6 +214,10 @@ void MainController::initialize()
 
 void MainController::shutdown()
 {
+    if (m_isShutdown)
+        return;
+    m_isShutdown = true;
+
     LOG_INFO("MainController::shutdown()");
 
     if (m_wsApiServer) {
@@ -219,6 +227,13 @@ void MainController::shutdown()
     m_presetManager->stop();
     m_hostManager->disconnectFromServer();
     m_clientManager->disconnectAll();
+
+    // Clear messaging references before stopping processes.
+    // stopAllProcesses() → cleanupServiceConnection() destroys NativeMessaging,
+    // but HostManager/ClientManager won't be notified (signals are disconnected
+    // to prevent re-entrancy). Clearing here prevents dangling pointers.
+    m_hostManager->setMessaging(nullptr);
+    m_clientManager->setMessaging(nullptr);
     
     m_processManager->stopAllProcesses();
 }
@@ -399,6 +414,11 @@ ProcessStatus::Status MainController::clientProcessStatus() const
 ServerStatus::Status MainController::clientServerStatus() const
 {
     return m_clientServerStatus;
+}
+
+HostLaunchMode::Mode MainController::hostLaunchMode() const
+{
+    return m_processManager->hostLaunchMode();
 }
 
 QString MainController::nextAccessCodeRefreshTime() const

@@ -38,6 +38,7 @@ class MainController : public QObject {
     // Host status
     Q_PROPERTY(ProcessStatus::Status hostProcessStatus READ hostProcessStatus NOTIFY hostProcessStatusChanged)
     Q_PROPERTY(ServerStatus::Status hostServerStatus READ hostServerStatus NOTIFY hostServerStatusChanged)
+    Q_PROPERTY(HostLaunchMode::Mode hostLaunchMode READ hostLaunchMode NOTIFY hostLaunchModeChanged)
     
     // Client status
     Q_PROPERTY(ProcessStatus::Status clientProcessStatus READ clientProcessStatus NOTIFY clientProcessStatusChanged)
@@ -137,6 +138,7 @@ public:
     ServerStatus::Status hostServerStatus() const;
     ProcessStatus::Status clientProcessStatus() const;
     ServerStatus::Status clientServerStatus() const;
+    HostLaunchMode::Mode hostLaunchMode() const;
     
     // MCP service getters
     bool mcpServiceRunning() const;
@@ -168,6 +170,7 @@ signals:
     void signalingStateChanged();
     void hostProcessStatusChanged();
     void hostServerStatusChanged();
+    void hostLaunchModeChanged();
     void clientProcessStatusChanged();
     void clientServerStatusChanged();
     void nextAccessCodeRefreshTimeChanged();
@@ -222,6 +225,8 @@ private:
     void updateAccessCodeRefreshTimer(int remainingSeconds = -1);
     QString getDefaultServerUrl() const;
     void setupWebSocketApiEvents();
+
+    bool m_isShutdown = false;
 };
 
 } // namespace quickdesk

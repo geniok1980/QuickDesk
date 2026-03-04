@@ -81,6 +81,8 @@ int main(int argc, char *argv[])
         "ServerStatus is an enum container");
     qmlRegisterUncreatableType<quickdesk::RtcStatus>("QuickDesk", 1, 0, "RtcStatus",
         "RtcStatus is an enum container");
+    qmlRegisterUncreatableType<quickdesk::HostLaunchMode>("QuickDesk", 1, 0, "HostLaunchMode",
+        "HostLaunchMode is an enum container");
     
     // Register KeyboardStateTracker as singleton
     qmlRegisterSingletonType<quickdesk::KeyboardStateTracker>("QuickDesk", 1, 0, "KeyboardStateTracker",

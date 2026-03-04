@@ -531,20 +531,34 @@ ApplicationWindow {
                         var processStatus = root.mainController.hostProcessStatus
                         var serverStatus = root.mainController.hostServerStatus
                         
+                        var statusText = ""
                         if (processStatus === ProcessStatus.Running) {
-                            if (serverStatus === ServerStatus.Disconnected) return qsTr("Host") + ": " + qsTr("Disconnected")
-                            if (serverStatus === ServerStatus.Connecting) return qsTr("Host") + ": " + qsTr("Connecting")
-                            if (serverStatus === ServerStatus.Connected) return qsTr("Host") + ": " + qsTr("Connected")
-                            if (serverStatus === ServerStatus.Failed) return qsTr("Host") + ": " + qsTr("Connection Failed")
-                            if (serverStatus === ServerStatus.Reconnecting) return qsTr("Host") + ": " + qsTr("Reconnecting")
-                            return qsTr("Host") + ": " + qsTr("Unknown")
+                            if (serverStatus === ServerStatus.Disconnected) statusText = qsTr("Disconnected")
+                            else if (serverStatus === ServerStatus.Connecting) statusText = qsTr("Connecting")
+                            else if (serverStatus === ServerStatus.Connected) statusText = qsTr("Connected")
+                            else if (serverStatus === ServerStatus.Failed) statusText = qsTr("Connection Failed")
+                            else if (serverStatus === ServerStatus.Reconnecting) statusText = qsTr("Reconnecting")
+                            else statusText = qsTr("Unknown")
+                        } else if (processStatus === ProcessStatus.NotStarted) {
+                            statusText = qsTr("Not Started")
+                        } else if (processStatus === ProcessStatus.Starting) {
+                            statusText = qsTr("Starting")
+                        } else if (processStatus === ProcessStatus.Failed) {
+                            statusText = qsTr("Start Failed")
+                        } else if (processStatus === ProcessStatus.Restarting) {
+                            statusText = qsTr("Restarting")
+                        } else {
+                            statusText = qsTr("Unknown")
                         }
-                        
-                        if (processStatus === ProcessStatus.NotStarted) return qsTr("Host") + ": " + qsTr("Not Started")
-                        if (processStatus === ProcessStatus.Starting) return qsTr("Host") + ": " + qsTr("Starting")
-                        if (processStatus === ProcessStatus.Failed) return qsTr("Host") + ": " + qsTr("Start Failed")
-                        if (processStatus === ProcessStatus.Restarting) return qsTr("Host") + ": " + qsTr("Restarting")
-                        return qsTr("Host") + ": " + qsTr("Unknown")
+
+                        var modeTag = ""
+                        var launchMode = root.mainController.hostLaunchMode
+                        if (launchMode === HostLaunchMode.Service)
+                            modeTag = " [Service]"
+                        else if (launchMode === HostLaunchMode.ChildProcess)
+                            modeTag = " [Process]"
+
+                        return qsTr("Host") + ": " + statusText + modeTag
                     }
                     font.pixelSize: Theme.fontSizeSmall
                     color: Theme.textSecondary

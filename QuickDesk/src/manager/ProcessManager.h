@@ -6,6 +6,7 @@
 
 #include <QObject>
 #include <QProcess>
+#include <QLocalSocket>
 #include <QTimer>
 #include <memory>
 
@@ -24,6 +25,7 @@ class ProcessManager : public QObject {
     Q_PROPERTY(bool clientAutoRestart READ clientAutoRestart WRITE setClientAutoRestart NOTIFY clientAutoRestartChanged)
     Q_PROPERTY(ProcessStatus::Status hostProcessStatus READ hostProcessStatus NOTIFY hostProcessStatusChanged)
     Q_PROPERTY(ProcessStatus::Status clientProcessStatus READ clientProcessStatus NOTIFY clientProcessStatusChanged)
+    Q_PROPERTY(HostLaunchMode::Mode hostLaunchMode READ hostLaunchMode NOTIFY hostLaunchModeChanged)
 
 public:
     explicit ProcessManager(QObject* parent = nullptr);
@@ -54,6 +56,10 @@ public:
     void setLogDir(const QString& logDir);
     QString logDir() const;
 
+    // Config directory (for host config.json)
+    void setConfigDir(const QString& configDir);
+    QString configDir() const;
+
     // Auto-detect executable paths
     bool autoDetectPaths();
 
@@ -66,6 +72,9 @@ public:
     // Process status
     ProcessStatus::Status hostProcessStatus() const;
     ProcessStatus::Status clientProcessStatus() const;
+
+    // Host launch mode
+    HostLaunchMode::Mode hostLaunchMode() const;
 
     // Reset retry counts (call after successful connection)
     void resetHostRetryCount();
@@ -85,6 +94,7 @@ signals:
     void clientProcessRestarting(int retryCount, int maxRetries);
     void clientAutoRestartChanged();
     void clientProcessStatusChanged();
+    void hostLaunchModeChanged();
 
 private slots:
     void onHostProcessFinished(int exitCode, QProcess::ExitStatus status);
@@ -99,13 +109,18 @@ private slots:
 private:
     std::unique_ptr<QProcess> m_hostProcess;
     std::unique_ptr<QProcess> m_clientProcess;
-    
+
+    // Service mode: connect to host worker via two Named Pipes
+    std::unique_ptr<QLocalSocket> m_hostReadSocket;
+    std::unique_ptr<QLocalSocket> m_hostWriteSocket;
+
     std::unique_ptr<NativeMessaging> m_hostMessaging;
     std::unique_ptr<NativeMessaging> m_clientMessaging;
 
     QString m_hostExePath;
     QString m_clientExePath;
     QString m_logDir;
+    QString m_configDir;
 
     // Auto-restart settings
     bool m_hostAutoRestart = true;
@@ -124,9 +139,19 @@ private:
     bool m_clientStoppingIntentionally = false;
     QTimer m_clientRestartTimer;
     ProcessStatus::Status m_clientProcessStatus = ProcessStatus::NotStarted;
+    HostLaunchMode::Mode m_hostLaunchMode = HostLaunchMode::Unknown;
 
     bool startProcess(QProcess* process, const QString& exePath, 
                       const QString& processName, const QString& logDir);
+    bool startHostAsChildProcess();
+    void connectToHostServiceAsync();
+    void cleanupServiceConnection();
+    void onServicePipeConnected();
+    void onServicePipeError();
+    bool isHostServiceRunning() const;
+    bool m_serviceConnecting = false;
+    QTimer m_pipeConnectTimer;
+
     QString findExecutable(const QString& name);
     int calculateRestartDelay(int retryCount) const;
     void setHostProcessStatus(ProcessStatus::Status status);

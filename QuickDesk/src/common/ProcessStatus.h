@@ -67,6 +67,24 @@ private:
     RtcStatus() = delete;
 };
 
+/**
+ * @brief Host launch mode enum
+ */
+class HostLaunchMode : public QObject {
+    Q_OBJECT
+    
+public:
+    enum Mode {
+        Unknown,        // Not determined yet
+        Service,        // Running via Windows Service
+        ChildProcess    // Running as a child process of Qt GUI
+    };
+    Q_ENUM(Mode)
+    
+private:
+    HostLaunchMode() = delete;
+};
+
 } // namespace quickdesk
 
 #endif // QUICKDESK_COMMON_PROCESSSTATUS_H

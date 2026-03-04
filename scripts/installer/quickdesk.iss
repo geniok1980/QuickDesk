@@ -29,7 +29,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppCopyright={#MyAppCopyright}
-DefaultDirName={localappdata}\{#MyAppName}
+DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=no
 OutputDir={#MyOutputDir}
@@ -39,11 +39,13 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 VersionInfoVersion={#MyAppVersion}
 ShowLanguageDialog=auto
+CloseApplications=force
+CloseApplicationsFilter=*.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -132,6 +134,36 @@ begin
     GetDisclaimerSubCaption, GetDisclaimerBody);
 end;
 
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // Stop the QuickDeskHost service if it exists (upgrade scenario).
+  Exec('sc.exe', 'stop QuickDeskHost', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Give the service time to stop.
+  Sleep(2000);
+  // Uninstall old service registration so files can be replaced.
+  if FileExists(ExpandConstant('{app}\quickdesk_host.exe')) then
+    Exec(ExpandConstant('{app}\quickdesk_host.exe'), '--uninstall-service', '',
+         SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Stop and uninstall the service before removing files.
+    Exec('sc.exe', 'stop QuickDeskHost', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(2000);
+    if FileExists(ExpandConstant('{app}\quickdesk_host.exe')) then
+      Exec(ExpandConstant('{app}\quickdesk_host.exe'), '--uninstall-service', '',
+           SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 Name: "startmenuicon"; Description: "{cm:CreateStartMenuShortcut}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
@@ -145,4 +177,11 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: start
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; Install the QuickDeskHost Windows service (runs as SYSTEM).
+; Pass --log-dir and --config-dir so that the service worker stores logs and
+; config in the same location as the Qt child-process mode.
+Filename: "{app}\quickdesk_host.exe"; Parameters: "--install-service --log-dir=""{userappdata}\QuickDesk\logs"" --config-dir=""{userappdata}\QuickDesk"""; StatusMsg: "Installing QuickDesk Host Service..."; Flags: runhidden waituntilterminated
+; Start the service.
+Filename: "sc.exe"; Parameters: "start QuickDeskHost"; StatusMsg: "Starting QuickDesk Host Service..."; Flags: runhidden waituntilterminated
+; Launch the application.
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
