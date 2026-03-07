@@ -26,7 +26,7 @@ class RemoteDesktopApp {
         this.keyboardHandler = null;
         this.touchHandler = null;
         this.clipboardHandler = null;
-        this._isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        this._isMobile = this._detectMobile();
         this.cursorRenderer = null;
         this.videoStats = null;
         this.floatingToolbar = null;
@@ -36,6 +36,37 @@ class RemoteDesktopApp {
         this._pendingAudioTrack = null;
         this._remoteWidth = 0;
         this._remoteHeight = 0;
+    }
+
+    /**
+     * 检测是否为移动设备（手机/平板）
+     * 仅靠 touch 能力检测不可靠，Windows 桌面也可能报 maxTouchPoints > 0
+     * 需要结合 UA、屏幕尺寸和指针能力综合判断
+     */
+    _detectMobile() {
+        const ua = navigator.userAgent || '';
+        // Check UA for common mobile identifiers
+        if (/Android|iPhone|iPad|iPod/i.test(ua)) {
+            // iPad with desktop UA: navigator.platform or maxTouchPoints
+            return true;
+        }
+        // iPad on iOS 13+ uses desktop UA but has touch
+        if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+            return true;
+        }
+        // Primary pointer is coarse (finger) and no fine pointer (mouse) available
+        if (window.matchMedia) {
+            const coarse = window.matchMedia('(pointer: coarse)').matches;
+            const fine = window.matchMedia('(any-pointer: fine)').matches;
+            if (coarse && !fine) {
+                return true;
+            }
+        }
+        // Small screen with touch capability is likely a phone
+        if (navigator.maxTouchPoints > 0 && window.innerWidth <= 768) {
+            return true;
+        }
+        return false;
     }
 
     async init() {

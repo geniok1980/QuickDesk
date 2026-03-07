@@ -130,7 +130,7 @@ class QuickDeskApp {
         });
 
         const remoteUrl = `remote.html?${params.toString()}`;
-        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isMobile = this._detectMobile();
         if (isMobile) {
             window.location.href = remoteUrl;
         } else {
@@ -244,6 +244,29 @@ class QuickDeskApp {
             ConnectionHistory.save(deviceId, serverUrl);
             this._renderHistory();
         }
+    }
+
+    // ==================== Device Detection ====================
+
+    _detectMobile() {
+        const ua = navigator.userAgent || '';
+        if (/Android|iPhone|iPad|iPod/i.test(ua)) {
+            return true;
+        }
+        if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+            return true;
+        }
+        if (window.matchMedia) {
+            const coarse = window.matchMedia('(pointer: coarse)').matches;
+            const fine = window.matchMedia('(any-pointer: fine)').matches;
+            if (coarse && !fine) {
+                return true;
+            }
+        }
+        if (navigator.maxTouchPoints > 0 && window.innerWidth <= 768) {
+            return true;
+        }
+        return false;
     }
 
     // ==================== Utils ====================
