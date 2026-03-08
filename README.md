@@ -309,9 +309,9 @@ QuickDesk supports full self-hosted deployment. You can deploy all services on y
 ### Components
 
 1. **Signaling Server** (required): Handles device registration and signaling relay
+   → [Signaling Server Deployment Guide](docs/signaling-server-deployment.md)
 2. **TURN Relay Server** (recommended): Provides relay when P2P direct connection fails
-
-For a detailed deployment guide, see [Signaling Server Deployment](docs/signaling-server-deployment.md).
+   → [TURN Server Deployment Guide](docs/turn-server-deployment.md)
 
 ### Client Configuration
 
