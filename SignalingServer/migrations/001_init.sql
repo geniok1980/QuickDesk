@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS devices (
     os VARCHAR(50),
     os_version VARCHAR(50),
     app_version VARCHAR(20),
+    user_id INTEGER DEFAULT 0,         -- bound user ID (0 = unbound)
+    device_name VARCHAR(100),          -- user-defined device name
+    remark VARCHAR(255),               -- device remark
+    access_code VARCHAR(6),            -- 6-digit access code
     online BOOLEAN DEFAULT false,
     last_seen TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -18,12 +22,17 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE INDEX IF NOT EXISTS idx_device_id ON devices(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_uuid ON devices(device_uuid);
+CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
 CREATE INDEX IF NOT EXISTS idx_online ON devices(online);
 CREATE INDEX IF NOT EXISTS idx_last_seen ON devices(last_seen);
 
 COMMENT ON TABLE devices IS 'QuickDesk host devices';
 COMMENT ON COLUMN devices.device_id IS '9-digit unique device identifier';
 COMMENT ON COLUMN devices.device_uuid IS 'UUID for internal use';
+COMMENT ON COLUMN devices.user_id IS 'bound user ID, 0 means unbound';
+COMMENT ON COLUMN devices.device_name IS 'user-defined device name';
+COMMENT ON COLUMN devices.remark IS 'device remark/description';
+COMMENT ON COLUMN devices.access_code IS '6-digit numeric access code';
 COMMENT ON COLUMN devices.online IS 'Whether the device is currently online';
 COMMENT ON COLUMN devices.last_seen IS 'Last time the device was seen online';
 
