@@ -30,7 +30,10 @@ func main() {
 
 	// Auto-migrate models
 	log.Println("Running database migrations...")
-	if err := db.AutoMigrate(&models.Device{}, &models.Preset{}, &models.AdminUser{}, &models.User{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Device{}, &models.Preset{}, &models.AdminUser{}, &models.User{},
+		&models.UserDevice{}, &models.ConnectionHistory{},
+	); err != nil {
 		log.Printf("Warning: migration error (continuing anyway): %v", err)
 	}
 
@@ -99,6 +102,20 @@ func main() {
 		v1.POST("/user/register", userAuth.Register)
 		v1.POST("/user/login", userAuth.Login)
 
+		// User device binding APIs (require user login token)
+		userDeviceHandler := handler.NewUserDeviceHandler(db)
+		userAPI := v1.Group("/user")
+		userAPI.Use(userAuth.AuthRequired())
+		{
+			userAPI.GET("/devices", userDeviceHandler.GetUserDevices)
+			userAPI.POST("/devices/bind", userDeviceHandler.BindDevice)
+			userAPI.POST("/devices/unbind", userDeviceHandler.UnbindDevice)
+			userAPI.POST("/devices/quick-connect", userDeviceHandler.QuickConnectBind)
+			userAPI.GET("/devices/check", userDeviceHandler.CheckDeviceBinding)
+			userAPI.POST("/devices/record", userDeviceHandler.RecordConnection)
+			userAPI.GET("/devices/logs", userDeviceHandler.GetUserDeviceLogs)
+		}
+
 		// Client-facing APIs require API key
 		clientAPI := v1.Group("")
 		clientAPI.Use(apiKeyAuth.Required())
@@ -143,6 +160,9 @@ func main() {
 			admin.PUT("/user-list/:id", userHandler.UpdateUser)
 			admin.DELETE("/user-list/:id", userHandler.DeleteUser)
 			admin.PUT("/user-list/:id/device-count", userHandler.UpdateUserDeviceCount)
+
+			// Admin device binding overview
+			admin.GET("/device-bindings", userDeviceHandler.GetAllBindings)
 		}
 	}
 

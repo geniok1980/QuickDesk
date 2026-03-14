@@ -30,7 +30,20 @@ func (h *UserHandler) GetUsers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"users": users})
+
+	type UserWithDevices struct {
+		models.User
+		Devices []models.UserDevice `json:"devices"`
+	}
+
+	result := make([]UserWithDevices, 0, len(users))
+	for _, user := range users {
+		var devices []models.UserDevice
+		h.db.Where("user_id = ? AND status = ?", user.ID, true).Find(&devices)
+		result = append(result, UserWithDevices{User: user, Devices: devices})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"users": result})
 }
 
 // GetUser handles GET /admin/user-list/:id
