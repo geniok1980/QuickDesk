@@ -30,7 +30,7 @@ func main() {
 
 	// Auto-migrate models
 	log.Println("Running database migrations...")
-	if err := db.AutoMigrate(&models.Device{}, &models.Preset{}, &models.AdminUser{}); err != nil {
+	if err := db.AutoMigrate(&models.Device{}, &models.Preset{}, &models.AdminUser{}, &models.User{}); err != nil {
 		log.Printf("Warning: migration error (continuing anyway): %v", err)
 	}
 
@@ -93,6 +93,12 @@ func main() {
 		// fetch min_version and show the force-upgrade prompt.
 		v1.GET("/preset", apiHandler.GetPreset)
 
+		// User authentication (public, no API key required)
+		userAuth := handler.NewUserAuth(db)
+		go userAuth.CleanupLoop()
+		v1.POST("/user/register", userAuth.Register)
+		v1.POST("/user/login", userAuth.Login)
+
 		// Client-facing APIs require API key
 		clientAPI := v1.Group("")
 		clientAPI.Use(apiKeyAuth.Required())
@@ -128,6 +134,15 @@ func main() {
 			admin.GET("/connections", apiHandler.GetConnectionStatus)
 			admin.GET("/activity", apiHandler.GetActivity)
 			admin.GET("/devices", apiHandler.GetAdminDevices)
+
+			// Admin user management
+			userHandler := handler.NewUserHandler(db)
+			admin.GET("/user-list", userHandler.GetUsers)
+			admin.GET("/user-list/:id", userHandler.GetUser)
+			admin.POST("/user-list", userHandler.CreateUser)
+			admin.PUT("/user-list/:id", userHandler.UpdateUser)
+			admin.DELETE("/user-list/:id", userHandler.DeleteUser)
+			admin.PUT("/user-list/:id/device-count", userHandler.UpdateUserDeviceCount)
 		}
 	}
 

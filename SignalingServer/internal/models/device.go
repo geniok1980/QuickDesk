@@ -16,7 +16,8 @@ type Device struct {
 	DeviceName string    `gorm:"size:100" json:"device_name"` // user-defined device name
 	Remark     string    `gorm:"size:255" json:"remark"`      // device remark
 	AccessCode string    `gorm:"size:6" json:"access_code"`   // 6-digit access code
-	Online     bool      `gorm:"default:false" json:"online"`
+	// BelongsTo relationship: populated when User is preloaded
+	User User `gorm:"foreignKey:UserID" json:"user,omitempty"`	Online     bool      `gorm:"default:false" json:"online"`
 	LastSeen   time.Time `json:"last_seen"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
