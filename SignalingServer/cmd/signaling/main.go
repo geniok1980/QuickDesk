@@ -32,7 +32,7 @@ func main() {
 	log.Println("Running database migrations...")
 	if err := db.AutoMigrate(
 		&models.Device{}, &models.Preset{}, &models.AdminUser{}, &models.User{},
-		&models.UserDevice{}, &models.ConnectionHistory{},
+		&models.UserDevice{}, &models.ConnectionHistory{}, &models.Settings{},
 	); err != nil {
 		log.Printf("Warning: migration error (continuing anyway): %v", err)
 	}
@@ -95,6 +95,10 @@ func main() {
 		// Preset is public so old clients (without API key) can still
 		// fetch min_version and show the force-upgrade prompt.
 		v1.GET("/preset", apiHandler.GetPreset)
+
+		// Public system settings (site name, logo, etc.)
+		settingsHandler := handler.NewSettingsHandler(db)
+		v1.GET("/settings", settingsHandler.GetSettings)
 
 		// User authentication (public, no API key required)
 		userAuth := handler.NewUserAuth(db)
@@ -163,6 +167,10 @@ func main() {
 
 			// Admin device binding overview
 			admin.GET("/device-bindings", userDeviceHandler.GetAllBindings)
+
+			// System settings management
+			admin.GET("/settings", settingsHandler.GetSettings)
+			admin.POST("/settings", settingsHandler.UpdateSettings)
 		}
 	}
 
