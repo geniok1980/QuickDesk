@@ -1112,31 +1112,91 @@
         <source>Automatically start the application when you log in</source>
         <translation>当你登录的时候自动启动软件</translation>
     </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="679"/>
+        <source>AI</source>
+        <translation>AI</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="698"/>
+        <source>AI Agent</source>
+        <translation>AI Agent</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="704"/>
+        <source>Enable host-side AI agent for remote tool execution</source>
+        <translation>开启被控端AI agent远程工具执行能力</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="720"/>
+        <source>AI Agent enabled</source>
+        <translation>AI Agent已启用</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="720"/>
+        <source>AI Agent disabled</source>
+        <translation>AI Agent已禁用</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="734"/>
+        <source>Skills Directories</source>
+        <translation>Skills目录</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="741"/>
+        <source>Built-in skills are loaded from the installation directory. Add extra directories below.</source>
+        <translation>内建skills在安装目录下，在下面添加额外目录。</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="780"/>
+        <source>Skills directory removed</source>
+        <translation>Skills目录已移除</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="789"/>
+        <source>No extra directories configured</source>
+        <translation>没有额外目录配置</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="805"/>
+        <source>C:path	oskills</source>
+        <translation>C:\\path\\to\\skills</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="810"/>
+        <source>Add</source>
+        <translation>添加</translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="819"/>
+        <source>Skills directory added. Agent will reload.</source>
+        <translation>Skills目录已添加。Agent启动重新加载。</translation>
+    </message>
 </context>
 <context>
     <name>quickdesk::ClientManager</name>
     <message>
-        <location filename="../../src/manager/ClientManager.cpp" line="932"/>
+        <location filename="../../src/manager/ClientManager.cpp" line="949"/>
         <source>Authentication failed</source>
         <translation>认证失败</translation>
     </message>
     <message>
-        <location filename="../../src/manager/ClientManager.cpp" line="933"/>
+        <location filename="../../src/manager/ClientManager.cpp" line="950"/>
         <source>Channel error</source>
         <translation>通道错误</translation>
     </message>
     <message>
-        <location filename="../../src/manager/ClientManager.cpp" line="934"/>
+        <location filename="../../src/manager/ClientManager.cpp" line="951"/>
         <source>Connection timeout</source>
         <translation>连接超时</translation>
     </message>
     <message>
-        <location filename="../../src/manager/ClientManager.cpp" line="935"/>
+        <location filename="../../src/manager/ClientManager.cpp" line="952"/>
         <source>Network error</source>
         <translation>网络错误</translation>
     </message>
     <message>
-        <location filename="../../src/manager/ClientManager.cpp" line="936"/>
+        <location filename="../../src/manager/ClientManager.cpp" line="953"/>
         <source>Connection failed (error code: %1)</source>
         <translation>连接失败（错误代码：%1）</translation>
     </message>
@@ -1157,45 +1217,45 @@
 <context>
     <name>quickdesk::MainController</name>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="304"/>
+        <location filename="../../src/controller/MainController.cpp" line="324"/>
         <source>Device ID: %1
 Access Code: %2</source>
         <translation>设备ID：%1
 访问码：%2</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="381"/>
+        <location filename="../../src/controller/MainController.cpp" line="401"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="383"/>
+        <location filename="../../src/controller/MainController.cpp" line="403"/>
         <source>Connecting...</source>
         <translation>连接中...</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="385"/>
+        <location filename="../../src/controller/MainController.cpp" line="405"/>
         <source>Disconnected</source>
         <translation>未连接</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="387"/>
+        <location filename="../../src/controller/MainController.cpp" line="407"/>
         <source>Connection failed</source>
         <translation>连接失败</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="393"/>
+        <location filename="../../src/controller/MainController.cpp" line="413"/>
         <source>Reconnecting (attempt %1)</source>
         <translation>重连中（第 %1 次尝试）</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="395"/>
+        <location filename="../../src/controller/MainController.cpp" line="415"/>
         <source>, retry in %1s</source>
         <translation>，%1秒后重试</translation>
     </message>
     <message>
-        <location filename="../../src/controller/MainController.cpp" line="430"/>
-        <location filename="../../src/controller/MainController.cpp" line="434"/>
+        <location filename="../../src/controller/MainController.cpp" line="450"/>
+        <location filename="../../src/controller/MainController.cpp" line="454"/>
         <source>Never</source>
         <translation>从不</translation>
     </message>
