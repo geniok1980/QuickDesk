@@ -386,6 +386,9 @@ QuickDesk/
 - [x] **OCR-based UI analysis tools (get_ui_state, find_element, screen_diff_summary, etc.)**
 - [x] **Persistent MCP transport mode and AI Agent settings**
 - [x] **Multi-directory skills loading with user-configurable paths**
+- [x] **Device memory & history retrieval (auto-profiling, operation logs, failure patterns)**
+- [x] **Workflow recording & playback (record, replay, parameterize)**
+- [x] **Trust layer & safety (risk assessment, confirmation dialogs, emergency stop, audit log)**
 - [ ] Linux support
 - [ ] File transfer
 - [ ] Audio streaming

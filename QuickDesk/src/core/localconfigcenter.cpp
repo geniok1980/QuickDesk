@@ -118,5 +118,6 @@ LCC_FUNCTION_IMP_BOOL(trayMessageShown, TrayMessageShown);
 LCC_FUNCTION_IMP_BOOL(agentEnabled, AgentEnabled);
 LCC_FUNCTION_IMP_STRING(mcpTransportMode, McpTransportMode);
 LCC_FUNCTION_IMP_STRING(extraSkillsDirs, ExtraSkillsDirs);
+LCC_FUNCTION_IMP_STRING(trustConfirmMode, TrustConfirmMode);
 
 }

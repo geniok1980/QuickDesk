@@ -725,6 +725,56 @@ Item {
                         
                         Rectangle { width: parent.width; height: 1; color: Theme.border }
                         
+                        // Trust Confirmation Mode
+                        Row {
+                            width: parent.width
+                            spacing: Theme.spacingMedium
+                            
+                            Column {
+                                spacing: 2
+                                width: parent.width - confirmModeCombo.width - parent.spacing
+                                anchors.verticalCenter: parent.verticalCenter
+                                
+                                Text {
+                                    text: qsTr("Operation Confirmation")
+                                    font.pixelSize: Theme.fontSizeMedium
+                                    color: Theme.text
+                                }
+                                
+                                Text {
+                                    text: qsTr("How to handle high-risk operation requests from AI agent")
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.textSecondary
+                                    wrapMode: Text.WordWrap
+                                    width: parent.width
+                                }
+                            }
+                            
+                            QDComboBox {
+                                id: confirmModeCombo
+                                width: 180
+                                anchors.verticalCenter: parent.verticalCenter
+                                model: [qsTr("Manual Confirm"), qsTr("Auto Approve")]
+                                currentIndex: mainController && mainController.trustConfirmMode === "auto_approve" ? 1 : 0
+                                
+                                onCurrentIndexChanged: {
+                                    if (!mainController) return
+                                    var mode = currentIndex === 1 ? "auto_approve" : "manual"
+                                    if (mainController.trustConfirmMode !== mode) {
+                                        mainController.trustConfirmMode = mode
+                                        root.showToast(
+                                            currentIndex === 1
+                                                ? qsTr("Operations will be auto-approved")
+                                                : qsTr("Operations require manual confirmation"),
+                                            currentIndex === 1 ? QDToast.Type.Warning : QDToast.Type.Info
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Rectangle { width: parent.width; height: 1; color: Theme.border }
+                        
                         // Skills Directories
                         Column {
                             width: parent.width

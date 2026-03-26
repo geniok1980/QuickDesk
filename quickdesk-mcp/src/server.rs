@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use rmcp::handler::server::router::prompt::PromptRouter;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -14,7 +17,16 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::event_bus::EventBus;
+use crate::memory::MemoryStore;
+use crate::trust::TrustEngine;
+use crate::workflow::WorkflowStore;
 use crate::ws_client::WsClient;
+
+pub struct SharedState {
+    pub memory: MemoryStore,
+    pub workflow: WorkflowStore,
+    pub trust: TrustEngine,
+}
 
 fn make_resource(uri: &str, name: &str, description: &str) -> Annotated<RawResource> {
     Annotated {
@@ -374,7 +386,25 @@ struct AgentExecParam {
     /// Tool name to invoke on the remote agent (e.g. "run_shell", "list_processes")
     tool: String,
     /// Arguments to pass to the tool as a JSON object
+    #[serde(default, deserialize_with = "deserialize_args")]
     args: Option<serde_json::Value>,
+}
+
+fn deserialize_args<'de, D>(deserializer: D) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let val = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match val {
+        None => Ok(None),
+        Some(serde_json::Value::String(s)) => {
+            serde_json::from_str::<serde_json::Value>(&s)
+                .map(Some)
+                .map_err(D::Error::custom)
+        }
+        Some(v) => Ok(Some(v)),
+    }
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -382,6 +412,136 @@ struct AgentExecParam {
 struct AgentListToolsParam {
     /// Connection ID of the remote host
     connection_id: String,
+}
+
+// ---- Device Memory parameter structs ----
+
+#[derive(Deserialize, JsonSchema)]
+struct DeviceProfileParam {
+    /// Device ID to get profile for
+    device_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateProfileParam {
+    /// Device ID
+    device_id: String,
+    /// Field to update (os_name, os_version, hostname, resolution, notes, known_apps)
+    field: String,
+    /// New value for the field
+    value: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SearchHistoryParam {
+    /// Device ID to search history for
+    device_id: String,
+    /// Filter by tool name (optional)
+    tool_name: Option<String>,
+    /// Search keyword in results/arguments (optional)
+    keyword: Option<String>,
+    /// Only show successful operations
+    success_only: Option<bool>,
+    /// Maximum number of results (default: 50)
+    limit: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct FailureMemoryParam {
+    /// Device ID
+    device_id: String,
+    /// Filter by tool name (optional)
+    tool_name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct DeviceSummaryParam {
+    /// Device ID
+    device_id: String,
+}
+
+// ---- Workflow parameter structs ----
+
+#[derive(Deserialize, JsonSchema)]
+struct StartRecordingParam {
+    /// Name for the workflow
+    name: String,
+    /// Device ID being controlled
+    device_id: String,
+    /// Connection ID (used as recording session key)
+    connection_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct StopRecordingParam {
+    /// Connection ID of the active recording
+    connection_id: String,
+    /// Description of what the workflow does
+    description: Option<String>,
+    /// Tags for categorization
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct WorkflowIdParam {
+    /// Workflow ID
+    workflow_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ReplayWorkflowParam {
+    /// Workflow ID to replay
+    workflow_id: String,
+    /// Connection ID of the remote host to replay on
+    connection_id: String,
+    /// Override specific argument values (key-value map)
+    overrides: Option<HashMap<String, serde_json::Value>>,
+}
+
+// ---- Trust Layer parameter structs ----
+
+#[derive(Deserialize, JsonSchema)]
+struct AssessRiskParam {
+    /// Tool name to assess
+    tool_name: String,
+    /// Arguments that would be passed to the tool
+    arguments: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct EmergencyStopParam {
+    /// Reason for activating emergency stop
+    reason: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SetTrustPolicyParam {
+    /// Whether medium-risk operations require confirmation
+    confirm_medium: Option<bool>,
+    /// Whether critical-risk operations are blocked entirely
+    block_critical: Option<bool>,
+    /// Tools that are always safe to execute without confirmation
+    auto_approve_tools: Option<Vec<String>>,
+    /// Tools that are completely blocked
+    blocked_tools: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct AuditLogParam {
+    /// Filter by connection ID (optional)
+    connection_id: Option<String>,
+    /// Maximum number of entries (default: 50)
+    limit: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ConfirmationResponseParam {
+    /// Confirmation request ID
+    confirmation_id: String,
+    /// Whether the operation is approved
+    approved: bool,
+    /// Reason for the decision
+    reason: Option<String>,
 }
 
 // ---- MCP Server ----
@@ -393,10 +553,11 @@ pub struct QuickDeskMcpServer {
     ws: WsClient,
     allowed_devices: Vec<String>,
     event_bus: EventBus,
+    state: Arc<SharedState>,
 }
 
 impl QuickDeskMcpServer {
-    pub fn new(ws: WsClient, allowed_devices: Vec<String>) -> Self {
+    pub fn new(ws: WsClient, allowed_devices: Vec<String>, state: Arc<SharedState>) -> Self {
         let event_bus = ws.event_bus().clone();
         Self {
             tool_router: Self::tool_router(),
@@ -404,6 +565,13 @@ impl QuickDeskMcpServer {
             ws,
             allowed_devices,
             event_bus,
+            state,
+        }
+    }
+
+    fn maybe_record(&self, connection_id: &str, tool_name: &str, args: &serde_json::Value, result: &str, success: bool) {
+        if self.state.workflow.is_recording(connection_id) {
+            self.state.workflow.record_step(connection_id, tool_name, args, result, success);
         }
     }
 
@@ -501,7 +669,10 @@ impl QuickDeskMcpServer {
             req["showWindow"] = json!(show);
         }
         match self.ws.request("connectToHost", req).await {
-            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
+            Ok(v) => {
+                self.state.memory.upsert_profile(&p.device_id, &v);
+                serde_json::to_string_pretty(&v).unwrap_or_default()
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -546,19 +717,25 @@ impl QuickDeskMcpServer {
     #[tool(description = "Click at coordinates on the remote desktop.")]
     async fn mouse_click(&self, params: Parameters<MouseClickParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"x": p.x, "y": p.y, "button": p.button.as_deref().unwrap_or("left")});
         match self
             .ws
             .request(
                 "mouseClick",
                 json!({
-                    "connectionId": p.connection_id,
+                    "connectionId": conn,
                     "x": p.x, "y": p.y,
                     "button": p.button.unwrap_or_else(|| "left".to_string()),
                 }),
             )
             .await
         {
-            Ok(_) => format!("Clicked at ({}, {})", p.x, p.y),
+            Ok(_) => {
+                let r = format!("Clicked at ({}, {})", p.x, p.y);
+                self.maybe_record(&conn, "mouse_click", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -566,18 +743,21 @@ impl QuickDeskMcpServer {
     #[tool(description = "Double-click at coordinates on the remote desktop.")]
     async fn mouse_double_click(&self, params: Parameters<MousePositionParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"x": p.x, "y": p.y});
         match self
             .ws
             .request(
                 "mouseDoubleClick",
-                json!({
-                    "connectionId": p.connection_id,
-                    "x": p.x, "y": p.y,
-                }),
+                json!({ "connectionId": conn, "x": p.x, "y": p.y }),
             )
             .await
         {
-            Ok(_) => format!("Double-clicked at ({}, {})", p.x, p.y),
+            Ok(_) => {
+                let r = format!("Double-clicked at ({}, {})", p.x, p.y);
+                self.maybe_record(&conn, "mouse_double_click", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -585,18 +765,21 @@ impl QuickDeskMcpServer {
     #[tool(description = "Move the mouse cursor to coordinates on the remote desktop.")]
     async fn mouse_move(&self, params: Parameters<MousePositionParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"x": p.x, "y": p.y});
         match self
             .ws
             .request(
                 "mouseMove",
-                json!({
-                    "connectionId": p.connection_id,
-                    "x": p.x, "y": p.y,
-                }),
+                json!({ "connectionId": conn, "x": p.x, "y": p.y }),
             )
             .await
         {
-            Ok(_) => format!("Moved to ({}, {})", p.x, p.y),
+            Ok(_) => {
+                let r = format!("Moved to ({}, {})", p.x, p.y);
+                self.maybe_record(&conn, "mouse_move", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -604,20 +787,22 @@ impl QuickDeskMcpServer {
     #[tool(description = "Scroll the mouse wheel on the remote desktop.")]
     async fn mouse_scroll(&self, params: Parameters<MouseScrollParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let dx = p.delta_x.unwrap_or(0.0);
+        let dy = p.delta_y.unwrap_or(0.0);
+        let args = json!({"x": p.x, "y": p.y, "delta_x": dx, "delta_y": dy});
         match self
             .ws
             .request(
                 "mouseScroll",
-                json!({
-                    "connectionId": p.connection_id,
-                    "x": p.x, "y": p.y,
-                    "deltaX": p.delta_x.unwrap_or(0.0),
-                    "deltaY": p.delta_y.unwrap_or(0.0),
-                }),
+                json!({ "connectionId": conn, "x": p.x, "y": p.y, "deltaX": dx, "deltaY": dy }),
             )
             .await
         {
-            Ok(_) => "Scrolled".to_string(),
+            Ok(_) => {
+                self.maybe_record(&conn, "mouse_scroll", &args, "Scrolled", true);
+                "Scrolled".to_string()
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -625,18 +810,18 @@ impl QuickDeskMcpServer {
     #[tool(description = "Type text on the remote desktop. Uses clipboard paste for reliable unicode input.")]
     async fn keyboard_type(&self, params: Parameters<KeyboardTypeParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"text": p.text});
         match self
             .ws
-            .request(
-                "keyboardType",
-                json!({
-                    "connectionId": p.connection_id,
-                    "text": p.text,
-                }),
-            )
+            .request("keyboardType", json!({"connectionId": conn, "text": p.text}))
             .await
         {
-            Ok(_) => format!("Typed: {}", p.text),
+            Ok(_) => {
+                let r = format!("Typed: {}", p.text);
+                self.maybe_record(&conn, "keyboard_type", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -644,18 +829,18 @@ impl QuickDeskMcpServer {
     #[tool(description = "Send a keyboard shortcut (hotkey) on the remote desktop. Keys are pressed in order and released in reverse. Examples: [\"ctrl\",\"c\"], [\"ctrl\",\"shift\",\"esc\"], [\"win\",\"r\"], [\"alt\",\"f4\"]")]
     async fn keyboard_hotkey(&self, params: Parameters<KeyboardHotkeyParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"keys": p.keys});
         match self
             .ws
-            .request(
-                "keyboardHotkey",
-                json!({
-                    "connectionId": p.connection_id,
-                    "keys": p.keys,
-                }),
-            )
+            .request("keyboardHotkey", json!({"connectionId": conn, "keys": p.keys}))
             .await
         {
-            Ok(_) => format!("Hotkey sent: {}", p.keys.join("+")),
+            Ok(_) => {
+                let r = format!("Hotkey sent: {}", p.keys.join("+"));
+                self.maybe_record(&conn, "keyboard_hotkey", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -676,18 +861,17 @@ impl QuickDeskMcpServer {
     #[tool(description = "Set remote clipboard content.")]
     async fn set_clipboard(&self, params: Parameters<SetClipboardParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"text": p.text});
         match self
             .ws
-            .request(
-                "setClipboard",
-                json!({
-                    "connectionId": p.connection_id,
-                    "text": p.text,
-                }),
-            )
+            .request("setClipboard", json!({"connectionId": conn, "text": p.text}))
             .await
         {
-            Ok(_) => "Clipboard set".to_string(),
+            Ok(_) => {
+                self.maybe_record(&conn, "set_clipboard", &args, "Clipboard set", true);
+                "Clipboard set".to_string()
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -695,12 +879,14 @@ impl QuickDeskMcpServer {
     #[tool(description = "Drag the mouse from one position to another on the remote desktop. Useful for drag-and-drop, text selection, resizing windows, and moving objects.")]
     async fn mouse_drag(&self, params: Parameters<MouseDragParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"start_x": p.start_x, "start_y": p.start_y, "end_x": p.end_x, "end_y": p.end_y});
         match self
             .ws
             .request(
                 "mouseDrag",
                 json!({
-                    "connectionId": p.connection_id,
+                    "connectionId": conn,
                     "startX": p.start_x, "startY": p.start_y,
                     "endX": p.end_x, "endY": p.end_y,
                     "button": p.button.unwrap_or_else(|| "left".to_string()),
@@ -708,10 +894,11 @@ impl QuickDeskMcpServer {
             )
             .await
         {
-            Ok(_) => format!(
-                "Dragged from ({}, {}) to ({}, {})",
-                p.start_x, p.start_y, p.end_x, p.end_y
-            ),
+            Ok(_) => {
+                let r = format!("Dragged from ({}, {}) to ({}, {})", p.start_x, p.start_y, p.end_x, p.end_y);
+                self.maybe_record(&conn, "mouse_drag", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -719,18 +906,18 @@ impl QuickDeskMcpServer {
     #[tool(description = "Press and hold a key on the remote desktop. The key stays pressed until explicitly released with key_release. Useful for modifier keys (shift, ctrl, alt) while performing mouse operations like Ctrl+click for multi-select.")]
     async fn key_press(&self, params: Parameters<KeyParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"key": p.key});
         match self
             .ws
-            .request(
-                "keyPress",
-                json!({
-                    "connectionId": p.connection_id,
-                    "key": p.key,
-                }),
-            )
+            .request("keyPress", json!({"connectionId": conn, "key": p.key}))
             .await
         {
-            Ok(_) => format!("Key pressed: {}", p.key),
+            Ok(_) => {
+                let r = format!("Key pressed: {}", p.key);
+                self.maybe_record(&conn, "key_press", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -738,18 +925,18 @@ impl QuickDeskMcpServer {
     #[tool(description = "Release a previously pressed key on the remote desktop. Must be paired with a prior key_press call.")]
     async fn key_release(&self, params: Parameters<KeyParam>) -> String {
         let p = params.0;
+        let conn = p.connection_id.clone();
+        let args = json!({"key": p.key});
         match self
             .ws
-            .request(
-                "keyRelease",
-                json!({
-                    "connectionId": p.connection_id,
-                    "key": p.key,
-                }),
-            )
+            .request("keyRelease", json!({"connectionId": conn, "key": p.key}))
             .await
         {
-            Ok(_) => format!("Key released: {}", p.key),
+            Ok(_) => {
+                let r = format!("Key released: {}", p.key);
+                self.maybe_record(&conn, "key_release", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -906,10 +1093,9 @@ Returns success=true with the clicked text and coordinates, or found=false if no
 Prefer this over screenshot→find coordinates→click for text-based UI interactions.")]
     async fn click_text(&self, params: Parameters<ClickTextParam>) -> String {
         let p = params.0;
-        let mut req = json!({
-            "connectionId": p.connection_id,
-            "text": p.text,
-        });
+        let conn = p.connection_id.clone();
+        let args = json!({"text": &p.text, "exact": p.exact, "ignore_case": p.ignore_case, "button": p.button});
+        let mut req = json!({ "connectionId": conn, "text": p.text });
         if let Some(exact) = p.exact {
             req["exact"] = json!(exact);
         }
@@ -920,7 +1106,11 @@ Prefer this over screenshot→find coordinates→click for text-based UI interac
             req["button"] = json!(btn);
         }
         match self.ws.request("clickText", req).await {
-            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
+            Ok(v) => {
+                let r = serde_json::to_string_pretty(&v).unwrap_or_default();
+                self.maybe_record(&conn, "click_text", &args, &r, true);
+                r
+            }
             Err(e) => format!("Error: {e}"),
         }
     }
@@ -1220,21 +1410,112 @@ If no attempt succeeds, returns a summary of all failures.")]
 
     // ---- Agent bridge tools ----
 
+    async fn check_trust_and_confirm(
+        &self, connection_id: &str, tool: &str, args: &serde_json::Value,
+    ) -> Result<(), String> {
+        if self.state.trust.is_emergency_active() {
+            self.state.trust.log_audit(
+                connection_id, tool, args,
+                crate::trust::RiskLevel::High, "blocked", "emergency_stop_active", "",
+            );
+            return Err("emergency stop is active — all operations are halted".into());
+        }
+
+        let risk = self.state.trust.assess_risk(tool, args);
+        if risk.risk_level.is_blocked(&self.state.trust.get_policy()) {
+            self.state.trust.log_audit(
+                connection_id, tool, args,
+                risk.risk_level, "blocked", "policy_blocked", "",
+            );
+            return Err("operation blocked by trust policy".into());
+        }
+
+        if risk.risk_level.requires_confirmation(&self.state.trust.get_policy()) {
+            let args_obj = if args.is_object() { args.clone() } else { json!({}) };
+            let confirm_req = json!({
+                "connection_id": connection_id,
+                "tool_name": tool,
+                "arguments": args_obj,
+                "risk_level": format!("{:?}", risk.risk_level).to_lowercase(),
+                "reasons": risk.reasons,
+                "timeout_secs": 60,
+            });
+            match self.ws.request_with_timeout(
+                "requestConfirmation", confirm_req, 
+                std::time::Duration::from_secs(65),
+            ).await {
+                Ok(resp) => {
+                    let approved = resp.get("approved")
+                        .and_then(|a| a.as_bool())
+                        .unwrap_or(false);
+                    if !approved {
+                        let reason = resp.get("reason")
+                            .and_then(|r| r.as_str())
+                            .unwrap_or("rejected");
+                        self.state.trust.log_audit(
+                            connection_id, tool, args,
+                            risk.risk_level, "rejected", reason, "user",
+                        );
+                        return Err(format!("operation rejected by user: {reason}"));
+                    }
+                }
+                Err(e) => {
+                    self.state.trust.log_audit(
+                        connection_id, tool, args,
+                        risk.risk_level, "error", &e, "",
+                    );
+                    return Err(format!("confirmation failed: {e}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[tool(description = "Execute a tool on the remote host agent (e.g. run_shell, list_processes). \
 The agent runs on the host machine and can call any skill tool. \
 Use agent_list_tools first to discover available tools and their parameters.")]
     async fn agent_exec(&self, params: Parameters<AgentExecParam>) -> String {
         let p = params.0;
-        let args = p.args.unwrap_or(serde_json::Value::Object(Default::default()));
+        let args = p.args.unwrap_or(json!({}));
+        if let Err(e) = self.check_trust_and_confirm(&p.connection_id, &p.tool, &args).await {
+            return json!({"error": e}).to_string();
+        }
+
+        let risk = self.state.trust.assess_risk(&p.tool, &args);
+        let start = std::time::Instant::now();
         let req = json!({
             "connection_id": p.connection_id,
             "tool": p.tool,
             "args": args,
         });
-        match self.ws.request("agentExec", req).await {
-            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
-            Err(e) => format!("Error: {e}"),
+        let (success, result_str, error_msg) = match self.ws.request("agentExec", req).await {
+            Ok(v) => {
+                let s = serde_json::to_string_pretty(&v).unwrap_or_default();
+                (true, s, String::new())
+            }
+            Err(e) => (false, format!("Error: {e}"), e),
+        };
+        let duration_ms = start.elapsed().as_millis() as i64;
+
+        self.state.trust.log_audit(
+            &p.connection_id, &p.tool, &args,
+            risk.risk_level, "executed",
+            if success { "success" } else { &error_msg }, "",
+        );
+
+        let session_id = format!("session-{}", &p.connection_id);
+        self.state.memory.log_operation(
+            &session_id, &p.connection_id, &p.tool, &args,
+            &result_str, success, duration_ms, &error_msg,
+        );
+
+        if self.state.workflow.is_recording(&p.connection_id) {
+            self.state.workflow.record_step(
+                &p.connection_id, &p.tool, &args, &result_str, success,
+            );
         }
+
+        result_str
     }
 
     #[tool(description = "List all tools available on the remote host agent. \
@@ -1248,6 +1529,293 @@ with agent_exec.")]
         match self.ws.request("agentListTools", req).await {
             Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
             Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // ==== Device Memory & History Tools ====
+
+    #[tool(description = "Get the stored profile for a remote device, including OS info, hardware specs, \
+connection history, and notes. Returns null if no profile exists yet.")]
+    async fn get_device_profile(&self, params: Parameters<DeviceProfileParam>) -> String {
+        let p = params.0;
+        match self.state.memory.get_profile(&p.device_id) {
+            Some(profile) => serde_json::to_string_pretty(&profile).unwrap_or_default(),
+            None => json!({"error": "no profile found", "device_id": p.device_id}).to_string(),
+        }
+    }
+
+    #[tool(description = "Update a specific field in a device's stored profile. \
+Allowed fields: os_name, os_version, hostname, resolution, notes, known_apps.")]
+    async fn update_device_profile(&self, params: Parameters<UpdateProfileParam>) -> String {
+        let p = params.0;
+        if self.state.memory.update_profile_field(&p.device_id, &p.field, &p.value) {
+            json!({"success": true}).to_string()
+        } else {
+            json!({"error": "update failed — check field name and device_id"}).to_string()
+        }
+    }
+
+    #[tool(description = "Search the operation history for a device. Filter by tool name, keyword, \
+or success status. Results are ordered by most recent first.")]
+    async fn search_operation_history(&self, params: Parameters<SearchHistoryParam>) -> String {
+        let p = params.0;
+        let records = self.state.memory.search_history(
+            &p.device_id,
+            p.tool_name.as_deref(),
+            p.keyword.as_deref(),
+            p.success_only.unwrap_or(false),
+            p.limit.unwrap_or(50),
+        );
+        serde_json::to_string_pretty(&records).unwrap_or_default()
+    }
+
+    #[tool(description = "Get recorded failure patterns for a device. Shows recurring errors, \
+their frequency, and any recorded resolutions.")]
+    async fn get_failure_memory(&self, params: Parameters<FailureMemoryParam>) -> String {
+        let p = params.0;
+        let records = self.state.memory.get_failures(&p.device_id, p.tool_name.as_deref());
+        serde_json::to_string_pretty(&records).unwrap_or_default()
+    }
+
+    #[tool(description = "Get a comprehensive summary of a device: total operations, success rate, \
+most-used tools, common failures, and session count.")]
+    async fn get_device_summary(&self, params: Parameters<DeviceSummaryParam>) -> String {
+        let p = params.0;
+        let summary = self.state.memory.device_summary(&p.device_id);
+        serde_json::to_string_pretty(&summary).unwrap_or_default()
+    }
+
+    // ==== Workflow Recording & Playback Tools ====
+
+    #[tool(description = "Start recording a workflow. All subsequent tool calls on this connection \
+will be captured as workflow steps until stop_recording is called.")]
+    async fn start_recording(&self, params: Parameters<StartRecordingParam>) -> String {
+        let p = params.0;
+        match self.state.workflow.start_recording(&p.name, &p.device_id, &p.connection_id) {
+            Ok(id) => json!({"workflow_id": id, "status": "recording"}).to_string(),
+            Err(e) => json!({"error": e}).to_string(),
+        }
+    }
+
+    #[tool(description = "Stop recording and save the workflow. Returns the saved workflow with all \
+recorded steps.")]
+    async fn stop_recording(&self, params: Parameters<StopRecordingParam>) -> String {
+        let p = params.0;
+        let tags = p.tags.unwrap_or_default();
+        match self.state.workflow.stop_recording(
+            &p.connection_id,
+            &p.description.unwrap_or_default(),
+            &tags,
+        ) {
+            Ok(wf) => serde_json::to_string_pretty(&wf).unwrap_or_default(),
+            Err(e) => json!({"error": e}).to_string(),
+        }
+    }
+
+    #[tool(description = "List all saved workflows with summary info (name, step count, tags, date).")]
+    async fn list_workflows(&self) -> String {
+        let workflows = self.state.workflow.list_workflows();
+        serde_json::to_string_pretty(&workflows).unwrap_or_default()
+    }
+
+    #[tool(description = "Get the full details of a saved workflow, including all steps and their arguments.")]
+    async fn get_workflow(&self, params: Parameters<WorkflowIdParam>) -> String {
+        match self.state.workflow.get_workflow(&params.0.workflow_id) {
+            Some(wf) => serde_json::to_string_pretty(&wf).unwrap_or_default(),
+            None => json!({"error": "workflow not found"}).to_string(),
+        }
+    }
+
+    #[tool(description = "Replay a saved workflow on a connected device. Executes each step sequentially \
+via the QuickDesk WebSocket API. Supports argument overrides for parameterized steps.")]
+    async fn replay_workflow(&self, params: Parameters<ReplayWorkflowParam>) -> String {
+        let p = params.0;
+        let overrides = p.overrides.unwrap_or_default();
+        let steps = match self.state.workflow.build_replay_steps(&p.workflow_id, &overrides) {
+            Ok(s) => s,
+            Err(e) => return json!({"error": e}).to_string(),
+        };
+
+        let total = steps.len() as u32;
+        let mut step_results = Vec::new();
+
+        for (seq, (tool_name, args)) in steps.iter().enumerate() {
+            let seq = seq as u32 + 1;
+
+            if self.state.trust.is_emergency_active() {
+                step_results.push(json!({
+                    "seq": seq, "tool_name": tool_name,
+                    "success": false, "error": "emergency stop active"
+                }));
+                return serde_json::to_string_pretty(&json!({
+                    "workflow_id": p.workflow_id,
+                    "total_steps": total,
+                    "completed_steps": seq - 1,
+                    "failed_step": seq,
+                    "error": "emergency stop active",
+                    "step_results": step_results,
+                })).unwrap_or_default();
+            }
+
+            if let Err(e) = self.check_trust_and_confirm(&p.connection_id, tool_name, args).await {
+                step_results.push(json!({
+                    "seq": seq, "tool_name": tool_name,
+                    "success": false, "error": e,
+                }));
+                return serde_json::to_string_pretty(&json!({
+                    "workflow_id": p.workflow_id,
+                    "total_steps": total,
+                    "completed_steps": seq - 1,
+                    "failed_step": seq,
+                    "error": e,
+                    "step_results": step_results,
+                })).unwrap_or_default();
+            }
+
+            let req = json!({
+                "connection_id": p.connection_id,
+                "tool": tool_name,
+                "args": args,
+            });
+
+            let (success, result_val, error) =
+                match self.ws.request("agentExec", req).await {
+                    Ok(v) => (true, v, String::new()),
+                    Err(e) => (false, json!(null), e),
+                };
+
+            step_results.push(json!({
+                "seq": seq,
+                "tool_name": tool_name,
+                "success": success,
+                "result": result_val,
+                "error": error,
+            }));
+
+            if !success {
+                return serde_json::to_string_pretty(&json!({
+                    "workflow_id": p.workflow_id,
+                    "total_steps": total,
+                    "completed_steps": seq - 1,
+                    "failed_step": seq,
+                    "error": error,
+                    "step_results": step_results,
+                })).unwrap_or_default();
+            }
+        }
+
+        serde_json::to_string_pretty(&json!({
+            "workflow_id": p.workflow_id,
+            "total_steps": total,
+            "completed_steps": total,
+            "failed_step": null,
+            "step_results": step_results,
+        })).unwrap_or_default()
+    }
+
+    #[tool(description = "Delete a saved workflow.")]
+    async fn delete_workflow(&self, params: Parameters<WorkflowIdParam>) -> String {
+        if self.state.workflow.delete_workflow(&params.0.workflow_id) {
+            json!({"success": true}).to_string()
+        } else {
+            json!({"error": "workflow not found or delete failed"}).to_string()
+        }
+    }
+
+    // ==== Trust Layer & Safety Tools ====
+
+    #[tool(description = "Assess the risk level of a tool call before executing it. Returns risk level \
+(safe/low/medium/high/critical), reasons, and recommendation (proceed/confirm/block).")]
+    async fn assess_risk(&self, params: Parameters<AssessRiskParam>) -> String {
+        let p = params.0;
+        let args = p.arguments.unwrap_or(json!({}));
+        let assessment = self.state.trust.assess_risk(&p.tool_name, &args);
+        serde_json::to_string_pretty(&assessment).unwrap_or_default()
+    }
+
+    #[tool(description = "Activate emergency stop. Immediately cancels all pending confirmations and \
+prevents any further tool execution until deactivated.")]
+    async fn emergency_stop(&self, params: Parameters<EmergencyStopParam>) -> String {
+        self.state.trust.activate_emergency(&params.0.reason);
+        self.state.trust.log_audit(
+            "", "", &json!({}),
+            crate::trust::RiskLevel::Critical,
+            "emergency_stop", "activated", &params.0.reason,
+        );
+        json!({"status": "emergency_stop_activated", "reason": params.0.reason}).to_string()
+    }
+
+    #[tool(description = "Deactivate emergency stop, allowing normal tool execution to resume.")]
+    async fn deactivate_emergency_stop(&self) -> String {
+        self.state.trust.deactivate_emergency();
+        self.state.trust.log_audit(
+            "", "", &json!({}),
+            crate::trust::RiskLevel::Low,
+            "emergency_stop", "deactivated", "manual",
+        );
+        json!({"status": "emergency_stop_deactivated"}).to_string()
+    }
+
+    #[tool(description = "Get the current emergency stop status.")]
+    async fn get_emergency_status(&self) -> String {
+        serde_json::to_string_pretty(&self.state.trust.emergency_status()).unwrap_or_default()
+    }
+
+    #[tool(description = "Get the current trust policy configuration, including auto-approved tools, \
+blocked tools, and dangerous patterns.")]
+    async fn get_trust_policy(&self) -> String {
+        let policy = self.state.trust.get_policy();
+        serde_json::to_string_pretty(&policy).unwrap_or_default()
+    }
+
+    #[tool(description = "Update the trust policy. Only provided fields are updated; others keep current values.")]
+    async fn set_trust_policy(&self, params: Parameters<SetTrustPolicyParam>) -> String {
+        let p = params.0;
+        let mut policy = self.state.trust.get_policy();
+
+        if let Some(v) = p.confirm_medium {
+            policy.confirm_medium = v;
+        }
+        if let Some(v) = p.block_critical {
+            policy.block_critical = v;
+        }
+        if let Some(v) = p.auto_approve_tools {
+            policy.auto_approve_tools = v;
+        }
+        if let Some(v) = p.blocked_tools {
+            policy.blocked_tools = v;
+        }
+
+        match self.state.trust.update_policy(policy) {
+            Ok(()) => json!({"success": true}).to_string(),
+            Err(e) => json!({"error": e}).to_string(),
+        }
+    }
+
+    #[tool(description = "Get the audit log of tool executions with risk assessments and user decisions. \
+Optionally filter by connection ID.")]
+    async fn get_audit_log(&self, params: Parameters<AuditLogParam>) -> String {
+        let p = params.0;
+        let entries = self.state.trust.get_audit_log(
+            p.connection_id.as_deref(),
+            p.limit.unwrap_or(50),
+        );
+        serde_json::to_string_pretty(&entries).unwrap_or_default()
+    }
+
+    #[tool(description = "Respond to a pending confirmation request from the trust layer. \
+Used to approve or reject high-risk operations.")]
+    async fn resolve_confirmation(&self, params: Parameters<ConfirmationResponseParam>) -> String {
+        let p = params.0;
+        let reason = p.reason.unwrap_or_default();
+        let req = json!({
+            "confirmation_id": p.confirmation_id,
+            "approved": p.approved,
+            "reason": reason,
+        });
+        match self.ws.request("resolveConfirmation", req).await {
+            Ok(_) => json!({"success": true, "approved": p.approved}).to_string(),
+            Err(e) => json!({"error": e}).to_string(),
         }
     }
 }

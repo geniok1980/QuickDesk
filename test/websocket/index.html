@@ -7,6 +7,7 @@
 <style>
 :root {
   --bg: #1e1e2e;
+  --bg2: #313150;
   --surface: #282840;
   --surface2: #313150;
   --border: #404060;
@@ -102,6 +103,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 /* Screenshot display */
 .screenshot-container { text-align: center; padding: 8px; }
 .screenshot-container img { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--border); }
+#connSelect { padding: 4px 8px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 13px; min-width: 120px; }
 </style>
 </head>
 <body>
@@ -114,6 +116,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     <input id="wsUrl" value="ws://127.0.0.1:9600" placeholder="WebSocket URL">
     <button id="btnConnect" onclick="toggleConnection()">Connect</button>
     <button class="danger" onclick="clearLog()">Clear Log</button>
+    <select id="connSelect" title="Active connection"><option value="">No connections</option></select>
   </div>
 
   <!-- Sidebar: Method List -->
@@ -239,6 +242,19 @@ const API_METHODS = {
   "Agent: shell": {
     "run_command": { desc: "Execute a shell command", params: { connection_id: "conn_1", command: "", timeout_secs: 60, working_dir: "" }, _agent: true, _argsMap: { command: "command", timeout_secs: "timeout_secs", working_dir: "working_dir" } },
   },
+  "Events": {
+    "getRecentEvents": { desc: "Get cached recent events", params: { eventType: "", limit: 20 } },
+    "listEventTypes": { desc: "List supported event types", params: {} },
+    "waitForEvent": { desc: "Wait for a specific event", params: { connectionId: "conn_1", event: "connectionStateChanged", filter: {}, timeoutMs: 5000 } },
+    "waitForConnectionState": { desc: "Wait for connection state", params: { connectionId: "conn_1", state: "connected", timeoutMs: 15000 } },
+    "waitForClipboardChange": { desc: "Wait for clipboard change", params: { connectionId: "conn_1", timeoutMs: 10000 } },
+    "waitForScreenChange": { desc: "Wait for screen content to change", params: { connectionId: "conn_1", timeoutMs: 5000 } },
+  },
+  "Trust": {
+    "requestConfirmation": { desc: "Request user confirmation for an operation", params: { connection_id: "conn_1", tool_name: "run_command", arguments: { command: "dir" }, risk_level: "high", reasons: ["base risk for tool"], timeout_secs: 60 } },
+    "emergencyStop": { desc: "Activate emergency stop", params: { reason: "test" } },
+    "deactivateEmergency": { desc: "Deactivate emergency stop", params: {} },
+  },
 };
 
 // ── State ──
@@ -273,6 +289,7 @@ function connect() {
   ws.onopen = () => {
     setStatus('connected');
     reconnectDelay = 1000;
+    setTimeout(refreshConnections, 500);
     logMsg('info', `Connected to ${url}`);
   };
 
@@ -289,6 +306,28 @@ function connect() {
   ws.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
+      // Update connection selector
+      if (data.id && data.id.startsWith('conn_refresh_') && data.result && Array.isArray(data.result.connections)) {
+        const sel = document.getElementById('connSelect');
+        const prev = sel.value;
+        sel.innerHTML = '';
+        if (data.result.connections.length === 0) {
+          sel.innerHTML = '<option value="">No connections</option>';
+        } else {
+          data.result.connections.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.connectionId || c.id || '';
+            opt.textContent = opt.value + (c.state ? ` (${c.state})` : '');
+            sel.appendChild(opt);
+          });
+          if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+        }
+        return;
+      }
+      // Auto-refresh on connection events
+      if (data.event === 'connectionStateChanged' || data.event === 'newConnection' || data.event === 'connectionClosed') {
+        setTimeout(refreshConnections, 300);
+      }
       if (data.event) {
         logMsg('event', `Event: ${data.event}\n${JSON.stringify(data.data || data, null, 2)}`);
       } else if (data.error) {
@@ -327,6 +366,13 @@ function setStatus(state) {
   dot.className = 'status-dot ' + state;
   txt.textContent = state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting...' : 'Disconnected';
   btn.textContent = state === 'connected' ? 'Disconnect' : 'Connect';
+}
+
+function refreshConnections() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  reqCounter++;
+  const msg = { id: `conn_refresh_${reqCounter}`, method: 'listConnections', params: {} };
+  ws.send(JSON.stringify(msg));
 }
 
 function sendMessage(method, params) {
@@ -379,7 +425,16 @@ function selectMethod(name, def) {
     label.textContent = key;
     row.appendChild(label);
 
-    if (typeof defaultVal === 'boolean') {
+    if (key === 'connectionId' || key === 'connection_id') {
+      const span = document.createElement('input');
+      span.type = 'text';
+      span.dataset.param = key;
+      span.value = document.getElementById('connSelect').value || defaultVal;
+      span.readOnly = true;
+      span.style.opacity = '0.7';
+      span.title = 'Auto-filled from connection selector';
+      row.appendChild(span);
+    } else if (typeof defaultVal === 'boolean') {
       const sel = document.createElement('select');
       sel.dataset.param = key;
       sel.innerHTML = '<option value="true">true</option><option value="false">false</option>';
@@ -413,10 +468,16 @@ function selectMethod(name, def) {
     }
     document.getElementById('rawJson').value = JSON.stringify({
       method: 'agentExec',
-      params: { connection_id: def.params.connection_id || 'conn_1', tool: name, args }
+      params: { connection_id: document.getElementById('connSelect').value || def.params.connection_id || 'conn_1', tool: name, args }
     }, null, 2);
   } else {
-    document.getElementById('rawJson').value = JSON.stringify({ method: name, params: def.params }, null, 2);
+    const rawParams = { ...def.params };
+    const connVal = document.getElementById('connSelect').value;
+    if (connVal) {
+      if ('connectionId' in rawParams) rawParams.connectionId = connVal;
+      if ('connection_id' in rawParams) rawParams.connection_id = connVal;
+    }
+    document.getElementById('rawJson').value = JSON.stringify({ method: name, params: rawParams }, null, 2);
   }
   switchTab('form');
 }
@@ -443,6 +504,11 @@ function collectParams() {
 function sendFromForm() {
   if (!currentMethod) { logMsg('error', 'Select a method first'); return; }
   const params = collectParams();
+  const connVal = document.getElementById('connSelect').value;
+  if (connVal) {
+    if ('connectionId' in currentMethod.def.params) params.connectionId = connVal;
+    if ('connection_id' in currentMethod.def.params) params.connection_id = connVal;
+  }
   if (currentMethod.def._agent) {
     const argsMap = currentMethod.def._argsMap || {};
     const args = {};
@@ -549,6 +615,9 @@ function escHtml(s) {
 }
 
 // ── Init ──
+document.getElementById('connSelect').addEventListener('change', () => {
+  if (currentMethod) selectMethod(currentMethod.name, currentMethod.def);
+});
 buildSidebar();
 </script>
 </body>

@@ -1046,3 +1046,89 @@ Users can add custom skills directories in **Settings > AI > Skills Directories*
 ### Agent Toggle
 
 The AI Agent can be enabled or disabled in **Settings > AI > AI Agent**. This setting is persisted and controls whether the `quickdesk-agent` process starts with the host. When disabled, no agent capabilities are reported to connected clients.
+
+---
+
+## Device Memory & History
+
+QuickDesk MCP includes a persistent device memory system (SQLite) that automatically records operation history and device profiles.
+
+### Device Profile Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_device_profile` | Get device profile (OS, hardware, connection history) |
+| `update_device_profile` | Update a profile field |
+| `get_device_summary` | Comprehensive device summary (success rate, top tools, common failures) |
+
+### History Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_operation_history` | Search operation history with filters (tool, keyword, success) |
+| `get_failure_memory` | Get failure records and pattern analysis |
+
+Device profiles are auto-created/updated on connection. `agent_exec` calls are automatically logged.
+
+---
+
+## Workflow Recording & Playback
+
+Record AI operation sequences as reusable workflows with parameterized replay.
+
+### Workflow Tools
+
+| Tool | Description |
+|------|-------------|
+| `start_recording` | Start recording. Params: `name`, `device_id`, `connection_id` |
+| `stop_recording` | Stop recording and save. Params: `connection_id`, `description`, `tags` |
+| `list_workflows` | List all saved workflows |
+| `get_workflow` | Get full workflow details with all steps |
+| `replay_workflow` | Replay a workflow with optional argument overrides |
+| `delete_workflow` | Delete a workflow |
+
+### Typical Flow
+
+```
+start_recording → execute agent_exec calls → stop_recording → get reusable workflow
+replay_workflow → replay on another device
+```
+
+During recording, all `agent_exec` calls are automatically captured as workflow steps.
+
+---
+
+## Trust Layer & Safety
+
+Risk assessment, confirmation approval, and emergency stop for high-risk operations.
+
+### Risk Levels
+
+| Level | Description | Behavior |
+|-------|-------------|----------|
+| Safe | Read-only operations (screenshot, queries) | Execute directly |
+| Low | Low-risk tools | Execute directly |
+| Medium | Input operations (click, type) | Configurable confirmation |
+| High | Command execution, file writes | Requires user confirmation |
+| Critical | Policy-blocked operations | Rejected |
+
+### Trust Tools
+
+| Tool | Description |
+|------|-------------|
+| `assess_risk` | Assess risk level of a tool call |
+| `emergency_stop` | Activate emergency stop, halt all AI operations |
+| `deactivate_emergency_stop` | Deactivate emergency stop |
+| `get_emergency_status` | Get emergency stop status |
+| `get_trust_policy` | Get current trust policy |
+| `set_trust_policy` | Update trust policy |
+| `get_audit_log` | Get audit log entries |
+| `resolve_confirmation` | Respond to a pending confirmation request |
+
+### Automatic Integration
+
+`agent_exec` has built-in trust layer integration:
+1. Check emergency stop → reject if active
+2. Risk assessment → reject if policy-blocked
+3. Confirmation required → show Qt dialog for user approval
+4. Audit log recorded after execution

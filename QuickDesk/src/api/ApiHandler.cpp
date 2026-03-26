@@ -46,7 +46,8 @@ ApiHandler::ApiHandler(MainController* controller, QObject* parent)
     , m_controller(controller)
     , m_uiState(controller)
     , m_verification(controller)
-    , m_agent(controller) {
+    , m_agent(controller)
+    , m_trust(controller) {
     registerHandlers();
 
     connect(m_controller->clientManager(), &ClientManager::clipboardReceived,
@@ -184,6 +185,20 @@ void ApiHandler::registerHandlers() {
     };
     m_handlers["agentListTools"] = [this](const QJsonObject& p) {
         return handleAgentListTools(p);
+    };
+
+    // Trust layer
+    m_handlers["requestConfirmation"] = [this](const QJsonObject& p) {
+        return handleRequestConfirmation(p);
+    };
+    m_handlers["emergencyStop"] = [this](const QJsonObject& p) {
+        return handleEmergencyStop(p);
+    };
+    m_handlers["deactivateEmergency"] = [this](const QJsonObject& p) {
+        return handleDeactivateEmergency(p);
+    };
+    m_handlers["resolveConfirmation"] = [this](const QJsonObject& p) {
+        return handleResolveConfirmation(p);
     };
 }
 
@@ -1109,6 +1124,33 @@ QJsonObject ApiHandler::handleAgentExec(const QJsonObject& params)
 QJsonObject ApiHandler::handleAgentListTools(const QJsonObject& params)
 {
     return makeResult(m_agent.handleAgentListTools(params));
+}
+
+QJsonObject ApiHandler::handleRequestConfirmation(const QJsonObject& params)
+{
+    return makeResult(m_trust.handleRequestConfirmation(params));
+}
+
+QJsonObject ApiHandler::handleEmergencyStop(const QJsonObject& params)
+{
+    return makeResult(m_trust.handleEmergencyStop(params));
+}
+
+QJsonObject ApiHandler::handleDeactivateEmergency(const QJsonObject& params)
+{
+    return makeResult(m_trust.handleDeactivateEmergency(params));
+}
+
+QJsonObject ApiHandler::handleResolveConfirmation(const QJsonObject& params)
+{
+    QString confirmId = params["confirmation_id"].toString();
+    bool approved = params["approved"].toBool(false);
+    QString reason = params["reason"].toString();
+    if (confirmId.isEmpty()) {
+        return makeError(400, "Missing 'confirmation_id'");
+    }
+    m_trust.resolveConfirmation(confirmId, approved, reason);
+    return makeResult(QJsonObject{{"success", true}});
 }
 
 } // namespace quickdesk

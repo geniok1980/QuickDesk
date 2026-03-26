@@ -81,7 +81,7 @@ impl WsClient {
 
     async fn authenticate(&self, token: &str) -> Result<(), String> {
         let resp = self
-            .try_request("auth", serde_json::json!({ "token": token }))
+            .try_request("auth", serde_json::json!({ "token": token }), Duration::from_secs(10))
             .await?;
         if resp.get("authenticated").and_then(|v| v.as_bool()) == Some(true) {
             Ok(())
@@ -91,20 +91,21 @@ impl WsClient {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
-        // Try once; if the connection is down, reconnect and try again.
-        match self.try_request(method, params.clone()).await {
+        self.request_with_timeout(method, params, Duration::from_secs(30)).await
+    }
+
+    pub async fn request_with_timeout(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+        match self.try_request(method, params.clone(), timeout).await {
             Ok(v) => Ok(v),
             Err(e) => {
                 tracing::warn!("WsClient request '{}' failed ({}), reconnecting…", method, e);
                 self.do_connect().await?;
-                self.try_request(method, params).await
+                self.try_request(method, params, timeout).await
             }
         }
     }
 
-    async fn try_request(&self, method: &str, params: Value) -> Result<Value, String> {
-        // Allocate an ID and register the pending slot — all under the lock
-        // so that the reader can never deliver the response before we register.
+    async fn try_request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
         let (id, rx) = {
             let mut guard = self.inner.lock().await;
             let inner = guard.as_mut().ok_or("Not connected")?;
@@ -123,19 +124,18 @@ impl WsClient {
                 .send(Message::Text(text.into()))
                 .await
                 .map_err(|e| {
-                    // Remove the pending entry on send failure.
-                    // (The pending lock is already dropped here so this is fine.)
                     format!("WebSocket send failed: {e}")
                 })?;
 
             (id, rx)
         };
-        let _ = id; // suppress unused-variable warning
+        let _ = id;
 
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
+        let secs = timeout.as_secs();
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(v)) => v,
             Ok(Err(_)) => Err("Response channel closed".to_string()),
-            Err(_) => Err("WebSocket request timed out after 30s".to_string()),
+            Err(_) => Err(format!("WebSocket request timed out after {secs}s")),
         }
     }
 

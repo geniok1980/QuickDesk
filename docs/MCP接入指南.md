@@ -1044,3 +1044,89 @@ skills/
 ### Agent 开关
 
 AI Agent 可以在 **设置 > AI > AI Agent** 中启用或禁用。此设置持久化保存，控制 `quickdesk-agent` 进程是否随主机启动。禁用时不会向已连接客户端上报 Agent 能力。
+
+---
+
+## 设备记忆与历史检索
+
+QuickDesk MCP 内置持久化的设备记忆系统（SQLite），自动记录操作历史和设备画像。
+
+### 设备画像工具
+
+| 工具 | 说明 |
+|------|------|
+| `get_device_profile` | 获取设备画像（OS、硬件、连接历史） |
+| `update_device_profile` | 更新画像字段 |
+| `get_device_summary` | 设备综合摘要（成功率、常用工具、常见失败） |
+
+### 历史检索工具
+
+| 工具 | 说明 |
+|------|------|
+| `search_operation_history` | 搜索操作历史，支持按工具名、关键字、成功状态筛选 |
+| `get_failure_memory` | 获取失败记录和模式分析 |
+
+设备连接时自动创建/更新画像，`agent_exec` 调用时自动记录操作日志和失败记忆。
+
+---
+
+## 工作流录制与回放
+
+将 AI 操作序列录制为可复用的工作流，支持参数化回放。
+
+### 工作流工具
+
+| 工具 | 说明 |
+|------|------|
+| `start_recording` | 开始录制，参数：`name`、`device_id`、`connection_id` |
+| `stop_recording` | 停止录制并保存，参数：`connection_id`、`description`、`tags` |
+| `list_workflows` | 列出所有已保存工作流 |
+| `get_workflow` | 获取工作流详情（含所有步骤） |
+| `replay_workflow` | 回放工作流，支持参数覆盖 |
+| `delete_workflow` | 删除工作流 |
+
+### 典型流程
+
+```
+start_recording → 执行一系列 agent_exec → stop_recording → 得到可复用工作流
+replay_workflow → 在另一台设备上重放
+```
+
+录制期间，所有 `agent_exec` 调用自动捕获为工作流步骤。
+
+---
+
+## 人机协同与信任层
+
+对高风险操作提供风险评估、确认审批和急停能力。
+
+### 风险分级
+
+| 级别 | 说明 | 行为 |
+|------|------|------|
+| Safe | 只读操作（截图、查询等） | 直接执行 |
+| Low | 低风险工具 | 直接执行 |
+| Medium | 输入操作（点击、输入等） | 可配置是否需确认 |
+| High | 命令执行、文件写入等 | 需用户确认 |
+| Critical | 被策略阻止的操作 | 直接拒绝 |
+
+### 信任层工具
+
+| 工具 | 说明 |
+|------|------|
+| `assess_risk` | 评估工具调用的风险级别 |
+| `emergency_stop` | 激活急停，停止所有 AI 操作 |
+| `deactivate_emergency_stop` | 解除急停 |
+| `get_emergency_status` | 获取急停状态 |
+| `get_trust_policy` | 获取当前信任策略 |
+| `set_trust_policy` | 更新信任策略 |
+| `get_audit_log` | 获取审计日志 |
+| `resolve_confirmation` | 响应待确认请求 |
+
+### 自动集成
+
+`agent_exec` 已自动集成信任层：
+1. 检查急停状态 → 活动则拒绝
+2. 风险评估 → 被策略阻止则拒绝
+3. 需要确认 → 通过 Qt 弹窗请求用户审批
+4. 执行后记录审计日志

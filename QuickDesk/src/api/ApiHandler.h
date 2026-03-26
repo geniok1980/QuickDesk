@@ -9,6 +9,7 @@
 #include "UiStateService.h"
 #include "VerificationService.h"
 #include "AgentHandler.h"
+#include "TrustHandler.h"
 
 #include <QObject>
 #include <QJsonObject>
@@ -26,6 +27,7 @@ public:
     explicit ApiHandler(MainController* controller, QObject* parent = nullptr);
 
     QJsonObject handleRequest(const QJsonObject& request);
+    TrustHandler* trustHandler() { return &m_trust; }
 
 private:
     using Handler = std::function<QJsonObject(const QJsonObject& params)>;
@@ -81,6 +83,12 @@ private:
     QJsonObject handleAgentExec(const QJsonObject& params);
     QJsonObject handleAgentListTools(const QJsonObject& params);
 
+    // Trust layer
+    QJsonObject handleRequestConfirmation(const QJsonObject& params);
+    QJsonObject handleEmergencyStop(const QJsonObject& params);
+    QJsonObject handleDeactivateEmergency(const QJsonObject& params);
+    QJsonObject handleResolveConfirmation(const QJsonObject& params);
+
     static int keyNameToScanCode(const QString& keyName);
 
     // Helpers
@@ -93,6 +101,7 @@ private:
     UiStateService       m_uiState;
     VerificationService  m_verification;
     AgentHandler         m_agent;
+    TrustHandler         m_trust;
 };
 
 } // namespace quickdesk

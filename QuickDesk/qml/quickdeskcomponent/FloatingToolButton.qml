@@ -33,6 +33,7 @@ Item {
     property bool supportsSendAttentionSequence: false
     property bool supportsLockWorkstation: false
     property bool supportsFileTransfer: false
+    property bool emergencyStopActive: false
 
     // Active file transfer count (for badge display)
     property int activeTransferCount: 0
@@ -40,6 +41,7 @@ Item {
     // Signals
     signal disconnectRequested(string connectionId)
     signal fitToRemoteDesktopRequested()
+    signal emergencyStopRequested()
     signal toggleVideoStats()
     signal showToast(string message, var toastType)
     signal uploadFileRequested()
@@ -512,13 +514,25 @@ Item {
         
         QDMenuSeparator { }
         
+        QDMenuSeparator {}
+
+        QDMenuItem {
+            text: root.emergencyStopActive ? qsTr("Deactivate Emergency Stop") : qsTr("Emergency Stop")
+            iconText: FluentIconGlyph.importantGlyph
+            isDestructive: !root.emergencyStopActive
+            onTriggered: {
+                root.emergencyStopRequested()
+            }
+        }
+
+        QDMenuSeparator {}
+
         QDMenuItem {
             text: qsTr("Disconnect")
             iconText: FluentIconGlyph.cancelGlyph
             isDestructive: true
             onTriggered: {
                 console.log("Disconnect connection:", root.connectionId)
-                // Emit signal to let RemoteWindow handle both disconnect and tab removal
                 root.disconnectRequested(root.connectionId)
             }
         }

@@ -68,6 +68,7 @@ class MainController : public QObject {
     // AI Agent
     Q_PROPERTY(bool agentEnabled READ agentEnabled WRITE setAgentEnabled NOTIFY agentEnabledChanged)
     Q_PROPERTY(QStringList extraSkillsDirs READ extraSkillsDirs WRITE setExtraSkillsDirs NOTIFY extraSkillsDirsChanged)
+    Q_PROPERTY(QString trustConfirmMode READ trustConfirmMode WRITE setTrustConfirmMode NOTIFY trustConfirmModeChanged)
 
     // Signaling state properties (convenience for QML)
     Q_PROPERTY(QString signalingState READ signalingState NOTIFY signalingStateChanged)
@@ -172,8 +173,15 @@ public:
     void setAgentEnabled(bool enabled);
     QStringList extraSkillsDirs() const;
     void setExtraSkillsDirs(const QStringList& dirs);
+    QString trustConfirmMode() const;
+    void setTrustConfirmMode(const QString& mode);
     Q_INVOKABLE void addSkillsDir(const QString& dir);
     Q_INVOKABLE void removeSkillsDir(int index);
+
+    // Trust layer — called from QML
+    Q_INVOKABLE void resolveConfirmation(const QString& confirmationId, bool approved, const QString& reason);
+    Q_INVOKABLE void activateEmergencyStop(const QString& reason);
+    Q_INVOKABLE void deactivateEmergencyStop();
 
     // MCP Service control
     Q_INVOKABLE void startMcpService();
@@ -208,6 +216,18 @@ signals:
     void mcpHttpPortChanged();
     void agentEnabledChanged();
     void extraSkillsDirsChanged();
+    void trustConfirmModeChanged();
+
+    // Trust layer signals for QML
+    void trustConfirmationRequested(const QString& confirmationId,
+                                    const QString& connectionId,
+                                    const QString& toolName,
+                                    const QString& argumentsJson,
+                                    const QString& riskLevel,
+                                    const QStringList& reasons,
+                                    int timeoutSecs);
+    void trustEmergencyStopActivated(const QString& reason);
+    void trustEmergencyStopDeactivated();
 
 private slots:
     void onHostProcessStarted();

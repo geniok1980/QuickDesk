@@ -10,19 +10,13 @@ use tokio_util::sync::CancellationToken;
 use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
 
 use crate::config::AppConfig;
-use crate::server::QuickDeskMcpServer;
+use crate::server::{QuickDeskMcpServer, SharedState};
 use crate::ws_client::WsClient;
 
-/// Start the MCP server over streamable HTTP transport.
-///
-/// The server exposes:
-/// - `POST /mcp` — MCP JSON-RPC over SSE (initialize, tool calls, etc.)
-/// - `GET  /mcp` — SSE event stream (for stateful sessions)
-/// - `DELETE /mcp` — terminate a session
-/// - `GET  /health` — simple health-check endpoint
 pub async fn start_http(
     config: &AppConfig,
     ws: WsClient,
+    shared_state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ct = CancellationToken::new();
     let allowed_devices = config.allowed_devices.clone().unwrap_or_default();
@@ -34,6 +28,7 @@ pub async fn start_http(
                 Ok(QuickDeskMcpServer::new(
                     ws.clone(),
                     allowed_devices.clone(),
+                    shared_state.clone(),
                 ))
             },
             session_manager,

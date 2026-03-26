@@ -5,6 +5,7 @@
 #include "../manager/NativeMessaging.h"
 #include "../manager/AgentManager.h"
 #include "../api/WebSocketServer.h"
+#include "../api/TrustHandler.h"
 #include "../api/OcrEngine.h"
 #include "infra/env/applicationcontext.h"
 #include "infra/log/log.h"
@@ -915,6 +916,15 @@ void MainController::setupWebSocketApiEvents() {
             {"status", status}
         });
     });
+
+    // Trust layer signals → MainController signals → QML
+    auto* trust = m_wsApiServer->handler()->trustHandler();
+    connect(trust, &TrustHandler::confirmationRequested,
+            this, &MainController::trustConfirmationRequested);
+    connect(trust, &TrustHandler::emergencyStopActivated,
+            this, &MainController::trustEmergencyStopActivated);
+    connect(trust, &TrustHandler::emergencyStopDeactivated,
+            this, &MainController::trustEmergencyStopDeactivated);
 }
 
 // MCP Service
@@ -1321,6 +1331,41 @@ void MainController::removeSkillsDir(int index) {
     if (index < 0 || index >= dirs.size()) return;
     dirs.removeAt(index);
     setExtraSkillsDirs(dirs);
+}
+
+QString MainController::trustConfirmMode() const {
+    return core::LocalConfigCenter::instance().trustConfirmMode();
+}
+
+void MainController::setTrustConfirmMode(const QString& mode) {
+    if (trustConfirmMode() == mode) return;
+    core::LocalConfigCenter::instance().setTrustConfirmMode(mode);
+    emit trustConfirmModeChanged();
+}
+
+void MainController::resolveConfirmation(const QString& confirmationId,
+                                          bool approved,
+                                          const QString& reason)
+{
+    if (!m_wsApiServer) return;
+    m_wsApiServer->handler()->trustHandler()->resolveConfirmation(
+        confirmationId, approved, reason);
+}
+
+void MainController::activateEmergencyStop(const QString& reason)
+{
+    if (!m_wsApiServer) return;
+    m_wsApiServer->handler()->trustHandler()->handleEmergencyStop(
+        QJsonObject{{"reason", reason}});
+    m_wsApiServer->broadcastEvent("emergencyStopActivated",
+        QJsonObject{{"reason", reason}});
+}
+
+void MainController::deactivateEmergencyStop()
+{
+    if (!m_wsApiServer) return;
+    m_wsApiServer->handler()->trustHandler()->handleDeactivateEmergency(QJsonObject{});
+    m_wsApiServer->broadcastEvent("emergencyStopDeactivated", QJsonObject{});
 }
 
 } // namespace quickdesk

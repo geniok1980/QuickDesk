@@ -24,6 +24,7 @@ Window {
     property bool hasAutoResized: false  // Only auto-resize once on first frame
     property bool showVideoStats: false  // Toggle video stats overlay
     property var closingConnections: ({})  // Guard against re-entrant closeConnection calls
+    property bool emergencyStopActive: false
     
     // C++ ConnectionListModel — only affected delegates are created/destroyed
     ConnectionListModel {
@@ -431,6 +432,7 @@ Window {
                 var stats = connId ? remoteWindow.getPerformanceStats(connId) : null
                 return stats ? (stats.supportsFileTransfer || false) : false
             }
+            emergencyStopActive: remoteWindow.emergencyStopActive
             videoInfo: {
                 var connId = currentTabIndex >= 0 && currentTabIndex < connectionModel.count 
                     ? connectionModel.connectionIdAt(currentTabIndex) 
@@ -448,11 +450,21 @@ Window {
             
             onDisconnectRequested: function(connectionId) {
                 console.log("FloatingToolButton disconnect requested for:", connectionId)
-                
-                // Find the connection index and close it
                 var idx = connectionModel.indexOf(connectionId)
                 if (idx >= 0) {
                     remoteWindow.closeConnection(idx)
+                }
+            }
+
+            onEmergencyStopRequested: {
+                if (remoteWindow.emergencyStopActive) {
+                    mainController.deactivateEmergencyStop()
+                    remoteWindow.emergencyStopActive = false
+                    toast.show(qsTr("Emergency stop deactivated"))
+                } else {
+                    mainController.activateEmergencyStop("user_manual")
+                    remoteWindow.emergencyStopActive = true
+                    toast.show(qsTr("Emergency stop activated - all AI operations halted"))
                 }
             }
             
@@ -1013,6 +1025,36 @@ Window {
                     }
                 }
             }
+        }
+    }
+
+    // Trust confirmation dialog
+    TrustConfirmationDialog {
+        id: trustDialog
+        onApproved: function(confirmationId, reason) {
+            mainController.resolveConfirmation(confirmationId, true, reason)
+        }
+        onRejected: function(confirmationId, reason) {
+            mainController.resolveConfirmation(confirmationId, false, reason)
+        }
+    }
+
+    Connections {
+        target: mainController
+        function onTrustConfirmationRequested(confirmationId, connectionId, toolName,
+                                               argumentsJson, riskLevel, reasons, timeoutSecs) {
+            var parsedArgs = {}
+            try { parsedArgs = JSON.parse(argumentsJson) } catch(e) {}
+            trustDialog.showConfirmation(confirmationId, connectionId, toolName,
+                                          parsedArgs, riskLevel, reasons, timeoutSecs)
+        }
+        function onTrustEmergencyStopActivated(reason) {
+            remoteWindow.emergencyStopActive = true
+            toast.show(qsTr("Emergency stop activated: ") + reason)
+        }
+        function onTrustEmergencyStopDeactivated() {
+            remoteWindow.emergencyStopActive = false
+            toast.show(qsTr("Emergency stop deactivated"))
         }
     }
 

@@ -30,6 +30,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 @keyframes pulse { 50% { opacity: 0.5; } }
 .header .status-text { font-size: 12px; color: var(--text2); min-width: 90px; }
 .header input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: var(--radius); font-size: 13px; width: 280px; }
+#connSelect { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; min-width: 120px; }
 .header button { background: var(--accent); color: var(--bg); border: none; padding: 4px 14px; border-radius: var(--radius); font-size: 12px; cursor: pointer; font-weight: 600; white-space: nowrap; }
 .header button:hover { filter: brightness(1.1); }
 .header button.danger { background: var(--red); }
@@ -107,7 +108,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     <button id="btnInit" onclick="doInitialize()">Initialize</button>
     <button class="secondary" onclick="doListTools()">Refresh Tools</button>
     <span style="color:var(--text2);font-size:11px;">│</span>
-    <input id="connId" value="" placeholder="connection_id (for Agent)" style="width:180px;">
+    <select id="connSelect" title="Active connection"><option value="">No connections</option></select>
     <button class="secondary" onclick="loadAgentSkills()">Load Agent Skills</button>
     <button class="danger" onclick="clearLog()">Clear</button>
   </div>
@@ -180,8 +181,71 @@ let currentTool = null;
 let sseSource = null;
 let agentTools = [];
 let agentConnectionId = '';
+let connectionsRefreshInterval = null;
 
 function getMcpUrl() { return document.getElementById('mcpUrl').value.replace(/\/+$/, ''); }
+
+function clearConnectionsRefreshInterval() {
+  if (connectionsRefreshInterval) {
+    clearInterval(connectionsRefreshInterval);
+    connectionsRefreshInterval = null;
+  }
+}
+
+function syncConnectionIdParams() {
+  const v = document.getElementById('connSelect').value;
+  document.querySelectorAll('#paramsArea [data-param="connection_id"]').forEach(el => {
+    el.value = v;
+  });
+}
+
+async function refreshConnections() {
+  if (!sessionId) return;
+  const sel = document.getElementById('connSelect');
+  const prev = sel.value;
+  const result = await mcpRequest('tools/call', { name: 'list_connections', arguments: {} });
+  if (!result || result.error) return;
+
+  const content = result.result?.content;
+  if (!content || !content.length) return;
+
+  const text = content.filter(c => c.type === 'text').map(c => c.text).join('');
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    logMsg('error', `list_connections: invalid JSON — ${e.message}`);
+    return;
+  }
+
+  const connections = parsed.connections || [];
+  sel.innerHTML = '';
+  if (connections.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No connections';
+    sel.appendChild(opt);
+  } else {
+    for (const c of connections) {
+      const id = c.connectionId;
+      if (id == null || id === '') continue;
+      const opt = document.createElement('option');
+      opt.value = String(id);
+      opt.textContent = String(id);
+      sel.appendChild(opt);
+    }
+  }
+
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  syncConnectionIdParams();
+}
+
+function startConnectionsRefreshInterval() {
+  clearConnectionsRefreshInterval();
+  connectionsRefreshInterval = setInterval(() => {
+    if (sessionId) refreshConnections();
+  }, 5000);
+}
 
 // ── MCP HTTP Transport ──
 
@@ -311,6 +375,7 @@ function openEventStream() {
 // ── MCP Protocol Operations ──
 
 async function doInitialize() {
+  clearConnectionsRefreshInterval();
   setStatus('connecting');
   sessionId = null;
 
@@ -363,12 +428,14 @@ async function doListTools() {
   logMsg('info', `Discovered ${tools.length} tool(s)`);
   buildSidebar();
   showResult(result, false);
+  await refreshConnections();
+  startConnectionsRefreshInterval();
 }
 
 async function loadAgentSkills() {
-  const connId = document.getElementById('connId').value.trim();
+  const connId = document.getElementById('connSelect').value.trim();
   if (!connId) {
-    logMsg('error', 'Enter a connection_id first (use list_connections to find it)');
+    logMsg('error', 'Select a connection first (refresh runs list_connections automatically)');
     return;
   }
   agentConnectionId = connId;
@@ -411,9 +478,9 @@ async function sendToolCall() {
   const args = collectArgs();
 
   if (currentTool._agentSkill) {
-    const connId = document.getElementById('connId').value.trim() || agentConnectionId;
+    const connId = document.getElementById('connSelect').value.trim() || agentConnectionId;
     if (!connId) {
-      logMsg('error', 'Enter a connection_id first');
+      logMsg('error', 'Select a connection first');
       return;
     }
     const result = await mcpRequest('tools/call', {
@@ -496,6 +563,9 @@ function buildSidebar() {
     else if (t.name.startsWith('agent')) group = 'Agent';
     else if (t.name.startsWith('list_event') || t.name.startsWith('get_recent')) group = 'Events';
     else if (t.name === 'retry_with_alternative') group = 'Verification';
+    else if (t.name.includes('device_profile') || t.name.includes('operation_history') || t.name.includes('failure_memory') || t.name.includes('device_summary')) group = 'Device Memory';
+    else if (t.name.includes('recording') || t.name.includes('workflow')) group = 'Workflow';
+    else if (t.name.includes('emergency') || t.name.includes('trust_policy') || t.name.includes('audit_log') || t.name === 'assess_risk' || t.name === 'resolve_confirmation') group = 'Trust & Safety';
     if (!groups[group]) groups[group] = [];
     groups[group].push(t);
   }
@@ -614,7 +684,16 @@ function selectTool(tool) {
     label.innerHTML += `<span class="type-tag">${esc(typeStr)}</span>`;
     row.appendChild(label);
 
-    if (prop.enum) {
+    if (key === 'connection_id') {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.dataset.param = key;
+      inp.dataset.propType = 'string';
+      inp.readOnly = true;
+      inp.value = document.getElementById('connSelect').value;
+      inp.title = 'Synced from header connection selector';
+      row.appendChild(inp);
+    } else if (prop.enum) {
       const sel = document.createElement('select');
       sel.dataset.param = key;
       for (const v of prop.enum) {
@@ -660,7 +739,10 @@ function selectTool(tool) {
   // Update raw JSON tab
   const sampleArgs = {};
   for (const [key, prop] of Object.entries(schema.properties)) {
-    if (prop.default !== undefined) sampleArgs[key] = prop.default;
+    if (key === 'connection_id') {
+      const cid = document.getElementById('connSelect').value;
+      if (cid) sampleArgs[key] = cid;
+    } else if (prop.default !== undefined) sampleArgs[key] = prop.default;
   }
   document.getElementById('rawJson').value = JSON.stringify({
     jsonrpc: '2.0', id: reqCounter + 1, method: 'tools/call',
@@ -703,7 +785,16 @@ function selectAgentSkillTool(agentTool) {
       label.innerHTML += `<span class="type-tag">${esc(typeStr)}</span>`;
       row.appendChild(label);
 
-      if (prop.enum) {
+      if (key === 'connection_id') {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.dataset.param = key;
+        inp.dataset.propType = 'string';
+        inp.readOnly = true;
+        inp.value = document.getElementById('connSelect').value;
+        inp.title = 'Synced from header connection selector';
+        row.appendChild(inp);
+      } else if (prop.enum) {
         const sel = document.createElement('select');
         sel.dataset.param = key;
         for (const v of prop.enum) {
@@ -746,11 +837,14 @@ function selectAgentSkillTool(agentTool) {
     }
   }
 
-  const connId = document.getElementById('connId').value.trim() || agentConnectionId;
+  const connId = document.getElementById('connSelect').value.trim() || agentConnectionId;
   const sampleArgs = {};
   if (schema && schema.properties) {
     for (const [key, prop] of Object.entries(schema.properties)) {
-      if (prop.default !== undefined) sampleArgs[key] = prop.default;
+      if (key === 'connection_id') {
+        const cid = document.getElementById('connSelect').value;
+        if (cid) sampleArgs[key] = cid;
+      } else if (prop.default !== undefined) sampleArgs[key] = prop.default;
     }
   }
   document.getElementById('rawJson').value = JSON.stringify({
@@ -859,6 +953,7 @@ function formatRaw() {
 // ── Status & Session ──
 
 function setStatus(state) {
+  if (state === 'disconnected') clearConnectionsRefreshInterval();
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
   dot.className = 'status-dot ' + state;
@@ -900,6 +995,7 @@ function clearLog() { document.getElementById('logEntries').innerHTML = ''; }
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 // ── Init ──
+document.getElementById('connSelect').addEventListener('change', syncConnectionIdParams);
 switchTab('form');
 </script>
 </body>

@@ -5,6 +5,7 @@
 #define QUICKDESK_API_WEBSOCKETSERVER_H
 
 #include "SecurityManager.h"
+#include "ApiHandler.h"
 
 #include <QObject>
 #include <QWebSocketServer>
@@ -15,7 +16,6 @@
 
 namespace quickdesk {
 
-class ApiHandler;
 class MainController;
 
 class WebSocketApiServer : public QObject {
@@ -35,6 +35,7 @@ public:
     void setAuthToken(const QString& token);
 
     SecurityManager* security() const { return m_security; }
+    ApiHandler* handler() const { return m_handler; }
 
     void broadcastEvent(const QString& event, const QJsonObject& data);
 

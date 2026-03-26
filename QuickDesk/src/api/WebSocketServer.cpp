@@ -269,7 +269,8 @@ void WebSocketApiServer::onTextMessageReceived(const QString& message) {
         "getUiState", "getScreenText", "findElement", "clickText",
         "assertTextPresent", "assertScreenState", "screenDiffSummary",
         "waitForText", "verifyActionResult",
-        "agentExec", "agentListTools"
+        "agentExec", "agentListTools",
+        "requestConfirmation"
     };
 
     if (kAsyncMethods.contains(method)) {

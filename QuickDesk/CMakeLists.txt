@@ -51,6 +51,7 @@ set(API_SOURCES
     src/api/UiStateService.cpp
     src/api/VerificationService.cpp
     src/api/AgentHandler.cpp
+    src/api/TrustHandler.cpp
 )
 
 set(API_HEADERS
@@ -62,6 +63,7 @@ set(API_HEADERS
     src/api/UiStateService.h
     src/api/VerificationService.h
     src/api/AgentHandler.h
+    src/api/TrustHandler.h
 )
 
 set(COMMON_HEADERS
@@ -226,6 +228,7 @@ qt_add_qml_module(QuickDesk
         qml/quickdeskcomponent/RemoteTab.qml
         qml/quickdeskcomponent/RemoteTabBar.qml
         qml/quickdeskcomponent/FloatingToolButton.qml
+        qml/quickdeskcomponent/TrustConfirmationDialog.qml
         qml/quickdeskcomponent/ConnectionListPanel.qml
         qml/quickdeskcomponent/RemoteDeviceSelector.qml
         qml/quickdeskcomponent/VideoStatsOverlay.qml
