@@ -1,17 +1,21 @@
 /**
  * main.js - QuickDesk Web Client entry
  *
- * Navigation, connection history, settings.
+ * Navigation, connection history, settings, user auth, device list.
  * Remote desktop sessions open in new tabs via window.open.
  */
 
 import { ConnectionHistory } from './storage/connection-history.js';
 import { IceServerStorage } from './storage/ice-server-storage.js';
 import { t, applyI18n, getLocale, setLocale, getSupportedLocales } from './i18n.js';
+import { userApi } from './api/user-api.js';
+import { userSync } from './api/user-sync.js';
 
 class QuickDeskApp {
     constructor() {
         this._currentPage = 'remote';
+        this._myDevices = [];
+        this._myFavorites = [];
     }
 
     init() {
@@ -21,11 +25,13 @@ class QuickDeskApp {
         this._initNavigation();
         this._initConnectForm();
         this._initSettings();
+        this._initUserAuth();
         this._renderHistory();
         this._renderUserServers();
 
         this._loadSavedServerUrl();
         this._applyUrlParams();
+        this._restoreSession();
 
         window.addEventListener('message', (e) => this._onMessage(e));
     }
@@ -142,6 +148,378 @@ class QuickDeskApp {
         this._showToast(t('connect.connecting', { deviceId }), 'info');
     }
 
+    // ==================== User Authentication ====================
+
+    _initUserAuth() {
+        const userArea = document.getElementById('userArea');
+        const loginDialog = document.getElementById('loginDialog');
+        const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+        const loginModeSwitch = document.getElementById('loginModeSwitch');
+        const loginCancelBtn = document.getElementById('loginCancelBtn');
+        const userMenuLogout = document.getElementById('userMenuLogout');
+        const refreshDevicesBtn = document.getElementById('refreshDevicesBtn');
+
+        this._loginMode = 'login'; // 'login' or 'register'
+
+        userArea?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (userApi.isLoggedIn()) {
+                this._showUserMenu();
+            } else {
+                this._showLoginDialog();
+            }
+        });
+
+        loginSubmitBtn?.addEventListener('click', () => this._onLoginSubmit());
+        loginModeSwitch?.addEventListener('click', () => this._toggleLoginMode());
+        loginCancelBtn?.addEventListener('click', () => this._hideLoginDialog());
+        loginDialog?.addEventListener('click', (e) => {
+            if (e.target === loginDialog) this._hideLoginDialog();
+        });
+
+        userMenuLogout?.addEventListener('click', () => this._onLogout());
+        refreshDevicesBtn?.addEventListener('click', () => this._refreshCloudData());
+
+        // Close user menu on outside click
+        document.addEventListener('click', () => {
+            const menu = document.getElementById('userMenuPopup');
+            if (menu) menu.style.display = 'none';
+        });
+
+        // Enter key for login form
+        document.getElementById('loginPassword')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && this._loginMode === 'login') this._onLoginSubmit();
+        });
+
+        // Sync events
+        userSync.addEventListener('devices-changed', () => this._fetchMyDevices());
+        userSync.addEventListener('favorites-changed', () => this._fetchMyFavorites());
+    }
+
+    _getServerUrl() {
+        return document.getElementById('serverUrl')?.value?.trim() ||
+               localStorage.getItem('quickdesk_signaling_url') ||
+               'ws://qdsignaling.quickcoder.cc:8000';
+    }
+
+    async _restoreSession() {
+        if (!userApi.isLoggedIn()) return;
+
+        userApi.setBaseUrl(this._getServerUrl());
+        const result = await userApi.fetchMe();
+        if (result.ok) {
+            this._onLoginSuccess();
+        } else {
+            // Token expired
+            userApi._clearSession();
+            this._updateUserUI();
+        }
+    }
+
+    _showLoginDialog() {
+        const dialog = document.getElementById('loginDialog');
+        if (dialog) {
+            dialog.style.display = 'flex';
+            document.getElementById('loginUsername')?.focus();
+        }
+        this._loginMode = 'login';
+        this._updateLoginDialogMode();
+        this._clearLoginMessages();
+    }
+
+    _hideLoginDialog() {
+        const dialog = document.getElementById('loginDialog');
+        if (dialog) dialog.style.display = 'none';
+        this._clearLoginMessages();
+    }
+
+    _toggleLoginMode() {
+        this._loginMode = this._loginMode === 'login' ? 'register' : 'login';
+        this._updateLoginDialogMode();
+        this._clearLoginMessages();
+    }
+
+    _updateLoginDialogMode() {
+        const title = document.getElementById('loginDialogTitle');
+        const submitBtn = document.getElementById('loginSubmitBtn');
+        const switchText = document.getElementById('loginModeSwitch');
+        const registerFields = document.getElementById('registerFields');
+
+        if (this._loginMode === 'login') {
+            if (title) title.textContent = t('user.login') || '登录';
+            if (submitBtn) submitBtn.textContent = t('user.login') || '登录';
+            if (switchText) switchText.textContent = t('user.noAccount') || '没有账号？注册';
+            if (registerFields) registerFields.style.display = 'none';
+        } else {
+            if (title) title.textContent = t('user.register') || '注册';
+            if (submitBtn) submitBtn.textContent = t('user.register') || '注册';
+            if (switchText) switchText.textContent = t('user.hasAccount') || '已有账号？登录';
+            if (registerFields) registerFields.style.display = '';
+        }
+    }
+
+    _clearLoginMessages() {
+        const err = document.getElementById('loginError');
+        const succ = document.getElementById('loginSuccess');
+        if (err) { err.style.display = 'none'; err.textContent = ''; }
+        if (succ) { succ.style.display = 'none'; succ.textContent = ''; }
+    }
+
+    _showLoginError(msg) {
+        const err = document.getElementById('loginError');
+        if (err) { err.style.display = 'block'; err.textContent = msg; }
+    }
+
+    _showLoginSuccess(msg) {
+        const succ = document.getElementById('loginSuccess');
+        if (succ) { succ.style.display = 'block'; succ.textContent = msg; }
+    }
+
+    async _onLoginSubmit() {
+        const username = document.getElementById('loginUsername')?.value?.trim();
+        const password = document.getElementById('loginPassword')?.value?.trim();
+
+        if (!username || !password) {
+            this._showLoginError(t('user.inputRequired') || '请输入用户名和密码');
+            return;
+        }
+
+        userApi.setBaseUrl(this._getServerUrl());
+        this._clearLoginMessages();
+
+        if (this._loginMode === 'login') {
+            const result = await userApi.login(username, password);
+            if (result.ok) {
+                this._hideLoginDialog();
+                this._onLoginSuccess();
+                this._showToast(t('user.loginSuccess') || '登录成功', 'success');
+            } else {
+                this._showLoginError(result.error || '登录失败');
+            }
+        } else {
+            const phone = document.getElementById('loginPhone')?.value?.trim() || '';
+            const email = document.getElementById('loginEmail')?.value?.trim() || '';
+            const result = await userApi.register(username, password, phone, email);
+            if (result.ok) {
+                this._showLoginSuccess(t('user.registerSuccess') || '注册成功，请登录');
+                this._loginMode = 'login';
+                this._updateLoginDialogMode();
+            } else {
+                this._showLoginError(result.error || '注册失败');
+            }
+        }
+    }
+
+    _onLoginSuccess() {
+        this._updateUserUI();
+        this._updateDevicePageVisibility();
+
+        // Start sync WebSocket
+        const serverUrl = this._getServerUrl();
+        const token = userApi.getToken();
+        if (token) {
+            userSync.connect(serverUrl, token);
+        }
+
+        // Fetch cloud data
+        this._refreshCloudData();
+    }
+
+    async _onLogout() {
+        document.getElementById('userMenuPopup').style.display = 'none';
+        await userApi.logout();
+        userSync.disconnect();
+        this._myDevices = [];
+        this._myFavorites = [];
+        this._updateUserUI();
+        this._updateDevicePageVisibility();
+        this._renderMyDevices();
+        this._renderMyFavorites();
+        this._showToast(t('user.logoutSuccess') || '已退出登录', 'info');
+    }
+
+    _showUserMenu() {
+        const menu = document.getElementById('userMenuPopup');
+        const userArea = document.getElementById('userArea');
+        if (!menu || !userArea) return;
+
+        const rect = userArea.getBoundingClientRect();
+        menu.style.left = rect.right + 4 + 'px';
+        menu.style.top = rect.top + 'px';
+        menu.style.display = 'block';
+    }
+
+    _updateUserUI() {
+        const loggedOut = document.getElementById('userLoggedOut');
+        const loggedIn = document.getElementById('userLoggedIn');
+        const avatar = document.getElementById('userAvatar');
+        const displayName = document.getElementById('userDisplayName');
+
+        if (userApi.isLoggedIn()) {
+            const info = userApi.getUserInfo();
+            const name = info?.username || 'User';
+            if (loggedOut) loggedOut.style.display = 'none';
+            if (loggedIn) loggedIn.style.display = 'flex';
+            if (avatar) avatar.textContent = name.charAt(0).toUpperCase();
+            if (displayName) displayName.textContent = name;
+        } else {
+            if (loggedOut) loggedOut.style.display = 'flex';
+            if (loggedIn) loggedIn.style.display = 'none';
+        }
+    }
+
+    // ==================== Device List ====================
+
+    _updateDevicePageVisibility() {
+        const notLoggedIn = document.getElementById('devicesNotLoggedIn');
+        const content = document.getElementById('devicesContent');
+        if (userApi.isLoggedIn()) {
+            if (notLoggedIn) notLoggedIn.style.display = 'none';
+            if (content) content.style.display = '';
+        } else {
+            if (notLoggedIn) notLoggedIn.style.display = '';
+            if (content) content.style.display = 'none';
+        }
+    }
+
+    async _refreshCloudData() {
+        await Promise.all([this._fetchMyDevices(), this._fetchMyFavorites()]);
+    }
+
+    async _fetchMyDevices() {
+        const result = await userApi.fetchMyDevices();
+        if (result.ok && result.data) {
+            this._myDevices = result.data.devices || [];
+            this._renderMyDevices();
+        }
+    }
+
+    async _fetchMyFavorites() {
+        const result = await userApi.fetchFavorites();
+        if (result.ok && result.data) {
+            this._myFavorites = result.data.favorites || [];
+            this._renderMyFavorites();
+            // Also re-render history to update star states
+            this._renderHistory();
+        }
+    }
+
+    _renderMyDevices() {
+        const container = document.getElementById('myDevicesList');
+        if (!container) return;
+
+        if (!this._myDevices || this._myDevices.length === 0) {
+            container.innerHTML = `<div class="empty-state"><div class="empty-icon">📱</div><p>${t('devices.noDevices') || '暂无绑定设备'}</p></div>`;
+            return;
+        }
+
+        container.innerHTML = '';
+        for (const device of this._myDevices) {
+            const item = document.createElement('div');
+            item.className = 'device-item';
+            const isOnline = device.online === true;
+            const name = device.remark || device.device_name || t('devices.device') || '设备';
+            const deviceId = device.device_id || '';
+
+            item.innerHTML = `
+                <div class="device-status ${isOnline ? 'online' : 'offline'}"></div>
+                <div class="device-info">
+                    <div class="device-name">${this._escapeHtml(name)}</div>
+                    <div class="device-id">${this._escapeHtml(deviceId)}</div>
+                </div>
+                <div class="device-actions">
+                    ${isOnline ? `<button class="btn btn-primary btn-sm" data-action="connect">${t('devices.connect') || '连接'}</button>` : ''}
+                </div>`;
+
+            if (isOnline) {
+                item.querySelector('[data-action="connect"]')?.addEventListener('click', () => {
+                    this._connectToCloudDevice(deviceId, device.access_code);
+                });
+            }
+
+            // Right-click context menu (simple prompt for remark)
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const newRemark = prompt(t('devices.setRemark') || '设置备注名:', name);
+                if (newRemark !== null && newRemark !== name) {
+                    userApi.setDeviceRemark(deviceId, newRemark).then(() => this._fetchMyDevices());
+                }
+            });
+
+            container.appendChild(item);
+        }
+    }
+
+    _renderMyFavorites() {
+        const container = document.getElementById('myFavoritesList');
+        if (!container) return;
+
+        if (!this._myFavorites || this._myFavorites.length === 0) {
+            container.innerHTML = `<div class="empty-state"><div class="empty-icon">⭐</div><p>${t('devices.noFavorites') || '暂无收藏设备'}</p></div>`;
+            return;
+        }
+
+        container.innerHTML = '';
+        for (const fav of this._myFavorites) {
+            const item = document.createElement('div');
+            item.className = 'device-item';
+            const name = fav.device_name || fav.device_id || '';
+            const deviceId = fav.device_id || '';
+
+            item.innerHTML = `
+                <span style="font-size:16px;flex-shrink:0;">⭐</span>
+                <div class="device-info">
+                    <div class="device-name">${this._escapeHtml(name)}</div>
+                    <div class="device-id">${this._escapeHtml(deviceId)}</div>
+                </div>
+                <div class="device-actions">
+                    <button class="btn btn-primary btn-sm" data-action="connect">${t('devices.connect') || '连接'}</button>
+                    <button class="icon-btn danger" data-action="remove" title="${t('devices.removeFavorite') || '移除收藏'}">✕</button>
+                </div>`;
+
+            item.querySelector('[data-action="connect"]')?.addEventListener('click', () => {
+                this._connectToCloudDevice(deviceId, fav.access_password);
+            });
+
+            item.querySelector('[data-action="remove"]')?.addEventListener('click', () => {
+                userApi.removeFavorite(deviceId).then(() => this._fetchMyFavorites());
+            });
+
+            container.appendChild(item);
+        }
+    }
+
+    _connectToCloudDevice(deviceId, accessCode) {
+        if (!accessCode) {
+            this._showToast(t('devices.noAccessCode') || '访问码不可用', 'error');
+            return;
+        }
+
+        const serverUrl = this._getServerUrl();
+        localStorage.setItem('quickdesk_signaling_url', serverUrl);
+
+        const videoCodec = localStorage.getItem('quickdesk_video_codec') || 'H264';
+        const params = new URLSearchParams({
+            server: serverUrl,
+            device: deviceId,
+            code: accessCode,
+            codec: videoCodec,
+        });
+
+        const remoteUrl = `remote.html?${params.toString()}`;
+        if (this._detectMobile()) {
+            window.location.href = remoteUrl;
+        } else {
+            window.open(remoteUrl, `quickdesk_${deviceId}`);
+        }
+
+        this._showToast(t('connect.connecting', { deviceId }) || `正在连接 ${deviceId}...`, 'info');
+    }
+
+    _isFavorite(deviceId) {
+        return this._myFavorites.some(f => f.device_id === deviceId);
+    }
+
     // ==================== Connection History ====================
 
     _renderHistory() {
@@ -158,8 +536,10 @@ class QuickDeskApp {
             return;
         }
 
+        const isLoggedIn = userApi.isLoggedIn();
         container.innerHTML = '';
         for (const device of devices) {
+            const isFav = isLoggedIn && this._isFavorite(device.deviceId);
             const item = document.createElement('div');
             item.className = 'history-item';
             item.innerHTML = `
@@ -172,6 +552,7 @@ class QuickDeskApp {
                     </div>
                 </div>
                 <div class="history-actions">
+                    ${isLoggedIn ? `<button class="fav-star" data-action="fav" title="${isFav ? (t('devices.removeFavorite') || '移除收藏') : (t('devices.addFavorite') || '添加收藏')}">${isFav ? '⭐' : '☆'}</button>` : ''}
                     <button class="icon-btn" data-action="fill" title="${t('history.fill')}">↗</button>
                     <button class="icon-btn danger" data-action="delete" title="${t('history.delete')}">✕</button>
                 </div>`;
@@ -187,6 +568,18 @@ class QuickDeskApp {
                 this._renderHistory();
                 this._showToast(t('history.deleted'), 'info');
             });
+
+            const favBtn = item.querySelector('[data-action="fav"]');
+            if (favBtn) {
+                favBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this._isFavorite(device.deviceId)) {
+                        userApi.removeFavorite(device.deviceId).then(() => this._fetchMyFavorites());
+                    } else {
+                        userApi.addFavorite(device.deviceId, '', '').then(() => this._fetchMyFavorites());
+                    }
+                });
+            }
 
             item.addEventListener('click', () => this._fillFromHistory(device));
 

@@ -10,12 +10,16 @@ import (
 	"log"
 	"net/http"
 	"quickdesk/signaling/internal/middleware"
+	"quickdesk/signaling/internal/models"
 	"quickdesk/signaling/internal/service"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 const (
@@ -67,19 +71,25 @@ type WSHandler struct {
 	connections    map[string]*ConnectionInfo // key: connection key
 	deviceClients  map[string][]string        // key: deviceID, value: []clientID
 	sessionClients map[string]string           // key: "deviceID:sid", value: clientID
+	userSyncConns  map[uint][]*websocket.Conn  // key: userID, value: list of sync WebSocket connections
 	mu             sync.RWMutex
 	deviceService  *service.DeviceService
 	authService    *service.AuthService
 	apiKeyAuth     *middleware.APIKeyAuth
+	db             *gorm.DB
+	rdb            *redis.Client
 }
 
-func NewWSHandler(deviceService *service.DeviceService, authService *service.AuthService) *WSHandler {
+func NewWSHandler(deviceService *service.DeviceService, authService *service.AuthService, db *gorm.DB, rdb *redis.Client) *WSHandler {
 	return &WSHandler{
 		connections:    make(map[string]*ConnectionInfo),
 		deviceClients:  make(map[string][]string),
 		sessionClients: make(map[string]string),
+		userSyncConns:  make(map[uint][]*websocket.Conn),
 		deviceService:  deviceService,
 		authService:    authService,
+		db:             db,
+		rdb:            rdb,
 	}
 }
 
@@ -209,7 +219,11 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 	// Set device online (only for host)
 	if !isClient {
 		h.deviceService.SetDeviceOnline(context.Background(), deviceID, true)
-		defer h.deviceService.SetDeviceOnline(context.Background(), deviceID, false)
+		h.NotifyDeviceOnlineStatus(deviceID, true)
+		defer func() {
+			h.deviceService.SetDeviceOnline(context.Background(), deviceID, false)
+			h.NotifyDeviceOnlineStatus(deviceID, false)
+		}()
 	}
 	
 	log.Printf("WebSocket connected: device_id=%s, role=%s, connection_key=%s", deviceID, role, connectionKey)
@@ -514,4 +528,129 @@ func (h *WSHandler) GetConnectionCount() int {
 	defer h.mu.RUnlock()
 
 	return len(h.connections)
+}
+
+// HandleUserSync handles GET /api/v1/user/sync?token=xxx
+// User-level WebSocket for real-time sync notifications.
+func (h *WSHandler) HandleUserSync(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing token"})
+		return
+	}
+
+	// Validate token: look up Redis key user_token:{token} to get userID
+	val, err := h.rdb.Get(context.Background(), fmt.Sprintf("user_token:%s", token)).Result()
+	if err != nil {
+		log.Printf("User sync: invalid or expired token")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		return
+	}
+
+	userID64, err := strconv.ParseUint(val, 10, 64)
+	if err != nil {
+		log.Printf("User sync: invalid userID in Redis: %s", val)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid session"})
+		return
+	}
+	userID := uint(userID64)
+
+	// Upgrade to WebSocket
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("User sync: failed to upgrade connection: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// Register in userSyncConns
+	h.mu.Lock()
+	h.userSyncConns[userID] = append(h.userSyncConns[userID], conn)
+	h.mu.Unlock()
+
+	log.Printf("User sync: connected for userID=%d (total sync conns: %d)", userID, len(h.userSyncConns[userID]))
+
+	// On disconnect, remove from userSyncConns
+	defer func() {
+		h.mu.Lock()
+		conns := h.userSyncConns[userID]
+		for i, c := range conns {
+			if c == conn {
+				h.userSyncConns[userID] = append(conns[:i], conns[i+1:]...)
+				break
+			}
+		}
+		if len(h.userSyncConns[userID]) == 0 {
+			delete(h.userSyncConns, userID)
+		}
+		h.mu.Unlock()
+		log.Printf("User sync: disconnected for userID=%d", userID)
+	}()
+
+	// Read loop: keep alive, discard messages, handle pong
+	conn.SetPongHandler(func(appData string) error {
+		return nil
+	})
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("User sync: WebSocket error for userID=%d: %v", userID, err)
+			}
+			break
+		}
+	}
+}
+
+// NotifyUserSync sends a sync message to all WebSocket connections for a user.
+func (h *WSHandler) NotifyUserSync(userID uint, msg interface{}) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("NotifyUserSync: failed to marshal message: %v", err)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	conns := h.userSyncConns[userID]
+	if len(conns) == 0 {
+		return
+	}
+
+	var alive []*websocket.Conn
+	for _, conn := range conns {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("NotifyUserSync: failed to send to userID=%d: %v", userID, err)
+			conn.Close()
+		} else {
+			alive = append(alive, conn)
+		}
+	}
+	h.userSyncConns[userID] = alive
+	if len(alive) == 0 {
+		delete(h.userSyncConns, userID)
+	}
+}
+
+// NotifyDeviceOnlineStatus notifies sync connections when a device goes online/offline.
+func (h *WSHandler) NotifyDeviceOnlineStatus(deviceID string, online bool) {
+	// Look up the device in DB to get UserID
+	var device models.Device
+	if err := h.db.Where("device_id = ?", deviceID).First(&device).Error; err != nil {
+		return
+	}
+	if device.UserID == 0 {
+		return
+	}
+
+	msgType := "device_offline"
+	if online {
+		msgType = "device_online"
+	}
+
+	h.NotifyUserSync(device.UserID, map[string]interface{}{
+		"type":      msgType,
+		"device_id": deviceID,
+	})
 }

@@ -36,6 +36,10 @@ MainController::MainController(QObject* parent)
     , m_remoteDeviceManager(std::make_unique<RemoteDeviceManager>(this))
     , m_presetManager(std::make_unique<PresetManager>(m_serverManager.get(), this))
 {
+    // Create AuthManager and CloudDeviceManager
+    m_authManager = std::make_unique<AuthManager>(m_serverManager.get(), this);
+    m_cloudDeviceManager = std::make_unique<CloudDeviceManager>(m_serverManager.get(), m_authManager.get(), this);
+
     // Create AgentManager and wire it to HostManager (host-side agent bridge)
     m_agentManager = std::make_unique<AgentManager>(this);
     m_agentManager->setHostManager(m_hostManager.get());
@@ -145,7 +149,15 @@ MainController::MainController(QObject* parent)
             return;
         }
         core::LocalConfigCenter::instance().setSavedAccessCode(currentCode);
-        LOG_INFO("Saved access code for 'never refresh' mode: {}", currentCode.toStdString()); 
+        LOG_INFO("Saved access code for 'never refresh' mode: {}", currentCode.toStdString());
+
+        // Sync access code to cloud if logged in
+        if (m_authManager && m_authManager->isLoggedIn()) {
+            QString deviceId = m_hostManager->deviceId();
+            if (!deviceId.isEmpty()) {
+                m_cloudDeviceManager->syncAccessCode(deviceId, currentCode);
+            }
+        }
     });
     
     // Forward PresetManager signals
@@ -153,6 +165,30 @@ MainController::MainController(QObject* parent)
             this, &MainController::presetLoadFailed);
     connect(m_presetManager.get(), &PresetManager::forceUpgradeRequired,
             this, &MainController::forceUpgradeRequired);
+
+    // Auth: on login success, auto-bind device + start sync + fetch lists
+    connect(m_authManager.get(), &AuthManager::loginSuccess, this, [this]() {
+        // Auto-bind this host device
+        QString deviceId = m_hostManager->deviceId();
+        if (!deviceId.isEmpty()) {
+            m_cloudDeviceManager->autoBindDevice(deviceId);
+        }
+        // Start sync WebSocket
+        m_cloudDeviceManager->startSync();
+        // Fetch device list + favorites
+        m_cloudDeviceManager->fetchMyDevices();
+        m_cloudDeviceManager->fetchFavorites();
+        // Sync current access code
+        QString code = m_hostManager->accessCode();
+        if (!deviceId.isEmpty() && !code.isEmpty()) {
+            m_cloudDeviceManager->syncAccessCode(deviceId, code);
+        }
+    });
+
+    // Auth: on logout, stop sync + clear data
+    connect(m_authManager.get(), &AuthManager::loggedOut, this, [this]() {
+        m_cloudDeviceManager->stopSync();
+    });
 
     // WebSocket API Server
     m_wsApiServer = std::make_unique<WebSocketApiServer>(this, this);
@@ -206,6 +242,9 @@ void MainController::initialize()
     // Start preset manager (polls server for preset config)
     m_presetManager->start();
 
+    // Restore user auth session
+    m_authManager->restoreSession();
+
     // Start Host process (status will be managed by ProcessManager)
     if (!m_processManager->startHostProcess()) {
         emit initializationFailed("Failed to start Host process");
@@ -240,6 +279,11 @@ void MainController::shutdown()
     m_isShutdown = true;
 
     LOG_INFO("MainController::shutdown()");
+
+    // Stop cloud sync
+    if (m_cloudDeviceManager) {
+        m_cloudDeviceManager->stopSync();
+    }
 
     // Stop MCP HTTP process if running
     stopMcpHttpProcess();
@@ -354,6 +398,16 @@ RemoteDeviceManager* MainController::remoteDeviceManager() const
 PresetManager* MainController::presetManager() const
 {
     return m_presetManager.get();
+}
+
+AuthManager* MainController::authManager() const
+{
+    return m_authManager.get();
+}
+
+CloudDeviceManager* MainController::cloudDeviceManager() const
+{
+    return m_cloudDeviceManager.get();
 }
 
 QString MainController::deviceId() const

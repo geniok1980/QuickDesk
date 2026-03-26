@@ -405,6 +405,56 @@
 
         .separator { height: 1px; background: var(--border); margin: 16px 0; }
 
+        /* ==================== Device List Page ==================== */
+        .device-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: var(--radius);
+            transition: background 0.15s;
+        }
+
+        .device-item:hover { background: rgba(255,255,255,0.05); }
+
+        .device-status {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .device-status.online { background: var(--success); }
+        .device-status.offline { background: var(--text-disabled); }
+
+        .device-info { flex: 1; min-width: 0; }
+        .device-name {
+            font-size: 14px;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .device-id {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'Consolas', 'Monaco', monospace;
+            margin-top: 2px;
+        }
+
+        .device-actions {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .fav-star {
+            background: none; border: none;
+            font-size: 16px; cursor: pointer;
+            padding: 4px;
+            transition: transform 0.15s;
+        }
+        .fav-star:hover { transform: scale(1.2); }
+
         /* ==================== Toast ==================== */
         .toast {
             position: fixed;
@@ -428,14 +478,30 @@
 <body>
     <!-- ==================== Left Navigation ==================== -->
     <nav class="nav-sidebar">
-        <div class="nav-header">
-            <h1>QuickDesk</h1>
-            <div class="version" data-i18n="version.label">Web Client v1.0.0</div>
+        <div class="nav-header" id="userArea" style="cursor:pointer;">
+            <div id="userLoggedOut" style="display:flex;align-items:center;gap:10px;justify-content:center;">
+                <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">👤</div>
+                <div style="text-align:left;">
+                    <div style="font-size:14px;font-weight:600;color:var(--text-primary);" data-i18n="user.login">登录</div>
+                    <div style="font-size:12px;color:var(--text-secondary);" data-i18n="user.clickToLogin">点击登录</div>
+                </div>
+            </div>
+            <div id="userLoggedIn" style="display:none;align-items:center;gap:10px;justify-content:center;">
+                <div id="userAvatar" style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:white;flex-shrink:0;">U</div>
+                <div style="text-align:left;flex:1;min-width:0;">
+                    <div id="userDisplayName" style="font-size:14px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">User</div>
+                    <div style="font-size:12px;color:var(--text-secondary);">QuickDesk</div>
+                </div>
+            </div>
         </div>
         <div class="nav-items">
             <div class="nav-item active" data-page="remote">
                 <span class="nav-icon">🖥️</span>
                 <span data-i18n="nav.remote">远程控制</span>
+            </div>
+            <div class="nav-item" data-page="devices">
+                <span class="nav-icon">📱</span>
+                <span data-i18n="nav.devices">设备列表</span>
             </div>
             <div class="nav-item" data-page="settings">
                 <span class="nav-icon">⚙️</span>
@@ -484,6 +550,48 @@
                         <div class="empty-state">
                             <div class="empty-icon">📋</div>
                             <p data-i18n="history.empty">暂无历史连接记录</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== Device List Page ===== -->
+        <div id="page-devices" class="page">
+            <h2 class="page-title" data-i18n="devices.title">设备列表</h2>
+
+            <!-- Not logged in prompt -->
+            <div id="devicesNotLoggedIn" class="card">
+                <div class="empty-state">
+                    <div class="empty-icon">🔒</div>
+                    <p data-i18n="devices.loginRequired">请先登录以查看设备列表</p>
+                    <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="document.getElementById('userArea').click()" data-i18n="user.login">登录</button>
+                </div>
+            </div>
+
+            <!-- Logged in content -->
+            <div id="devicesContent" style="display:none;">
+                <!-- My Devices -->
+                <div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                        <div class="card-title" style="margin-bottom:0;" data-i18n="devices.myDevices">我的设备</div>
+                        <button class="btn btn-secondary btn-sm" id="refreshDevicesBtn">🔄</button>
+                    </div>
+                    <div id="myDevicesList">
+                        <div class="empty-state">
+                            <div class="empty-icon">📱</div>
+                            <p data-i18n="devices.noDevices">暂无绑定设备</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- My Favorites -->
+                <div class="card">
+                    <div class="card-title" data-i18n="devices.myFavorites">我的收藏</div>
+                    <div id="myFavoritesList">
+                        <div class="empty-state">
+                            <div class="empty-icon">⭐</div>
+                            <p data-i18n="devices.noFavorites">暂无收藏设备，从历史连接中点击 ⭐ 收藏</p>
                         </div>
                     </div>
                 </div>
@@ -608,6 +716,48 @@
                     QuickDesk 采用 MIT License 开源协议。其中 quickdesk-remoting 组件基于 Chromium，采用 BSD 3-Clause License 开源协议。
                 </p>
             </div>
+        </div>
+    </div>
+
+    <!-- Login Dialog -->
+    <div id="loginDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:32px;width:360px;max-width:90vw;">
+            <h3 id="loginDialogTitle" style="text-align:center;margin-bottom:20px;font-size:20px;" data-i18n="user.login">登录</h3>
+            <div class="form-group">
+                <label data-i18n="user.username">用户名</label>
+                <input type="text" id="loginUsername" class="form-input" placeholder="用户名" autocomplete="username" />
+            </div>
+            <div class="form-group">
+                <label data-i18n="user.password">密码</label>
+                <input type="password" id="loginPassword" class="form-input" placeholder="密码" autocomplete="current-password" />
+            </div>
+            <div id="registerFields" style="display:none;">
+                <div class="form-group">
+                    <label data-i18n="user.phone">手机号 (可选)</label>
+                    <input type="text" id="loginPhone" class="form-input" placeholder="手机号" />
+                </div>
+                <div class="form-group">
+                    <label data-i18n="user.email">邮箱 (可选)</label>
+                    <input type="email" id="loginEmail" class="form-input" placeholder="邮箱" />
+                </div>
+            </div>
+            <div id="loginError" style="display:none;color:var(--error);font-size:13px;margin-bottom:12px;text-align:center;"></div>
+            <div id="loginSuccess" style="display:none;color:var(--success);font-size:13px;margin-bottom:12px;text-align:center;"></div>
+            <button id="loginSubmitBtn" class="btn btn-primary btn-full" style="margin-bottom:12px;" data-i18n="user.login">登录</button>
+            <div style="text-align:center;">
+                <span id="loginModeSwitch" style="color:var(--accent);font-size:13px;cursor:pointer;" data-i18n="user.noAccount">没有账号？注册</span>
+            </div>
+            <div style="text-align:center;margin-top:8px;">
+                <span id="loginCancelBtn" style="color:var(--text-secondary);font-size:13px;cursor:pointer;" data-i18n="user.cancel">取消</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Menu Popup -->
+    <div id="userMenuPopup" style="display:none;position:absolute;z-index:100;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:140px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <div id="userMenuLogout" class="nav-item" style="border-left:none;padding:10px 16px;font-size:13px;color:var(--error);">
+            <span>🚪</span>
+            <span data-i18n="user.logout">退出登录</span>
         </div>
     </div>
 

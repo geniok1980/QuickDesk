@@ -50,7 +50,43 @@ void HttpRequest::sendPostRequest(const QUrl& url, const QList<QPair<QString, QS
     request.setHeader(QNetworkRequest::ContentLengthHeader, byte.size());
     QNetworkReply* reply = m_networkAccessManager->post(request, byte);
     auto taskKey = reinterpret_cast<quintptr>(reply);
-    LOG_DEBUG("[http] start get:{}", taskKey);
+    LOG_DEBUG("[http] start post:{}", taskKey);
+    m_tasks[taskKey] = callback;
+}
+
+void HttpRequest::sendPutRequest(const QUrl& url, const QList<QPair<QString, QString>>& headers, const QString& data, int timeout, HttpRequestCallback callback)
+{
+    QNetworkRequest request;
+    request.setUrl(url);
+    request.setTransferTimeout(timeout);
+    for (auto it = headers.constBegin(); it != headers.constEnd(); ++it) {
+        request.setRawHeader(it->first.toUtf8(), it->second.toUtf8());
+    }
+
+    configRequest(request);
+
+    QByteArray byte = data.toUtf8();
+    request.setHeader(QNetworkRequest::ContentLengthHeader, byte.size());
+    QNetworkReply* reply = m_networkAccessManager->put(request, byte);
+    auto taskKey = reinterpret_cast<quintptr>(reply);
+    LOG_DEBUG("[http] start put:{}", taskKey);
+    m_tasks[taskKey] = callback;
+}
+
+void HttpRequest::sendDeleteRequest(const QUrl& url, const QList<QPair<QString, QString>>& headers, int timeout, HttpRequestCallback callback)
+{
+    QNetworkRequest request;
+    request.setUrl(url);
+    request.setTransferTimeout(timeout);
+    for (auto it = headers.constBegin(); it != headers.constEnd(); ++it) {
+        request.setRawHeader(it->first.toUtf8(), it->second.toUtf8());
+    }
+
+    configRequest(request);
+
+    QNetworkReply* reply = m_networkAccessManager->deleteResource(request);
+    auto taskKey = reinterpret_cast<quintptr>(reply);
+    LOG_DEBUG("[http] start delete:{}", taskKey);
     m_tasks[taskKey] = callback;
 }
 

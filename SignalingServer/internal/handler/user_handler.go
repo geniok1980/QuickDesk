@@ -264,22 +264,13 @@ func (a *UserAuth) Register(c *gin.Context) {
 		return
 	}
 
-	level := req.Level
-	if level == "" {
-		level = "V1"
-	}
-	channelType := req.ChannelType
-	if channelType == "" {
-		channelType = "全球"
-	}
-
 	user := models.User{
 		Username:    req.Username,
 		Phone:       req.Phone,
 		Email:       req.Email,
 		Password:    string(hashedPassword),
-		Level:       level,
-		ChannelType: channelType,
+		Level:       "V1",
+		ChannelType: "全球",
 		Status:      true,
 	}
 
@@ -409,4 +400,52 @@ func (a *UserAuth) GetUserIDFromToken(c *gin.Context) uint {
 	}
 	userID, _ := strconv.ParseUint(val, 10, 64)
 	return uint(userID)
+}
+
+// Logout handles POST /api/v1/user/logout
+func (a *UserAuth) Logout(c *gin.Context) {
+	token := ""
+	auth := c.GetHeader("Authorization")
+	if len(auth) > 7 && auth[:7] == "Bearer " {
+		token = auth[7:]
+	}
+	if token == "" {
+		token = c.Query("token")
+	}
+
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token不能为空"})
+		return
+	}
+
+	ctx := context.Background()
+	a.rdb.Del(ctx, a.redisKey(token))
+
+	c.JSON(http.StatusOK, gin.H{"message": "退出登录成功"})
+}
+
+// GetMe handles GET /api/v1/user/me
+func (a *UserAuth) GetMe(c *gin.Context) {
+	userID, _ := c.Get("authed_user_id")
+
+	var user models.User
+	if result := a.db.First(&user, userID); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": gin.H{
+			"id":          user.ID,
+			"username":    user.Username,
+			"phone":       user.Phone,
+			"email":       user.Email,
+			"level":       user.Level,
+			"deviceCount": user.DeviceCount,
+			"channelType": user.ChannelType,
+			"status":      user.Status,
+			"createdAt":   user.CreatedAt,
+			"updatedAt":   user.UpdatedAt,
+		},
+	})
 }

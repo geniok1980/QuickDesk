@@ -34,6 +34,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&models.Device{}, &models.Preset{}, &models.AdminUser{}, &models.User{},
 		&models.UserDevice{}, &models.ConnectionHistory{}, &models.Settings{},
+		&models.UserFavorite{},
 	); err != nil {
 		log.Printf("Warning: migration error (continuing anyway): %v", err)
 	}
@@ -72,7 +73,7 @@ func main() {
 
 	// Initialize handlers
 	apiHandler := handler.NewAPIHandler(deviceService, authService, presetService, cfg)
-	wsHandler := handler.NewWSHandler(deviceService, authService)
+	wsHandler := handler.NewWSHandler(deviceService, authService, db, redisClient)
 	
 	// Set WSHandler reference for API handler (needed for online status checks)
 	apiHandler.SetWSHandler(wsHandler)
@@ -105,19 +106,31 @@ func main() {
 		userAuth := handler.NewUserAuth(db, redisClient)
 		v1.POST("/user/register", userAuth.Register)
 		v1.POST("/user/login", userAuth.Login)
+		v1.POST("/user/logout", userAuth.Logout)
 
 		// User device binding APIs (require user login token)
 		userDeviceHandler := handler.NewUserDeviceHandler(db)
+		userDeviceHandler.SetSyncNotifier(func(userID uint, msg interface{}) {
+			wsHandler.NotifyUserSync(userID, msg)
+		})
 		userAPI := v1.Group("/user")
 		userAPI.Use(userAuth.AuthRequired())
 		{
+			userAPI.GET("/me", userAuth.GetMe)
 			userAPI.GET("/devices", userDeviceHandler.GetUserDevices)
 			userAPI.POST("/devices/bind", userDeviceHandler.BindDevice)
 			userAPI.POST("/devices/unbind", userDeviceHandler.UnbindDevice)
+			userAPI.POST("/devices/auto-bind", userDeviceHandler.AutoBindDevice)
 			userAPI.POST("/devices/quick-connect", userDeviceHandler.QuickConnectBind)
 			userAPI.GET("/devices/check", userDeviceHandler.CheckDeviceBinding)
 			userAPI.POST("/devices/record", userDeviceHandler.RecordConnection)
 			userAPI.GET("/devices/logs", userDeviceHandler.GetUserDeviceLogs)
+			userAPI.PUT("/devices/:device_id/access-code", userDeviceHandler.UpdateAccessCode)
+			userAPI.PUT("/devices/:device_id/remark", userDeviceHandler.UpdateDeviceRemark)
+			userAPI.GET("/favorites", userDeviceHandler.GetFavorites)
+			userAPI.POST("/favorites", userDeviceHandler.AddFavorite)
+			userAPI.PUT("/favorites/:device_id", userDeviceHandler.UpdateFavorite)
+			userAPI.DELETE("/favorites/:device_id", userDeviceHandler.RemoveFavorite)
 		}
 
 		// Client-facing APIs require API key
@@ -177,6 +190,9 @@ func main() {
 	// WebSocket routes (API key checked inside handler before upgrade)
 	wsHandler.SetAPIKeyAuth(apiKeyAuth)
 	router.GET("/signal/:device_id", wsHandler.HandleWebSocket)
+
+	// User sync WebSocket (token-authenticated, no API key)
+	router.GET("/api/v1/user/sync", wsHandler.HandleUserSync)
 
 	// Legacy route for backward compatibility with existing tests
 	router.GET("/host/:device_id", wsHandler.HandleWebSocket)

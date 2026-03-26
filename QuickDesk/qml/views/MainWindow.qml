@@ -7,6 +7,7 @@ import QuickDesk 1.0
 import "../"
 import "../component"
 import "../pages"
+import "../quickdeskcomponent"
 
 ApplicationWindow {
     id: root
@@ -297,6 +298,7 @@ ApplicationWindow {
             
             menuItems: [
                 { icon: FluentIconGlyph.remoteGlyph, text: qsTr("Remote Control") },
+                { icon: FluentIconGlyph.contactInfoGlyph, text: qsTr("Device List") },
                 { icon: FluentIconGlyph.settingsGlyph, text: qsTr("Settings") },
                 { icon: FluentIconGlyph.infoGlyph, text: qsTr("About") }
             ]
@@ -308,24 +310,121 @@ ApplicationWindow {
             header: Item {
                 width: parent.width
                 height: 72
-                
-                Column {
-                    anchors.centerIn: parent
-                    spacing: Theme.spacingXSmall
-                    
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "QuickDesk"
-                        font.pixelSize: Theme.fontSizeLarge
-                        font.weight: Font.Bold
-                        color: Theme.text
+
+                // User login area (replaces QuickDesk title)
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: Theme.spacingXSmall
+                        radius: Theme.radiusSmall
+                        color: parent.containsMouse ? Theme.surfaceHover : "transparent"
+
+                        Behavior on color {
+                            ColorAnimation { duration: Theme.animationDurationFast }
+                        }
                     }
-                    
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: "v" + APP_VERSION
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.textSecondary
+
+                    onClicked: {
+                        var loggedIn = root.mainController && root.mainController.authManager
+                                       && root.mainController.authManager.isLoggedIn
+                        if (loggedIn) {
+                            userMenu.popup()
+                        } else {
+                            loginDialog.open()
+                        }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.spacingMedium
+                        anchors.rightMargin: Theme.spacingMedium
+                        spacing: Theme.spacingSmall
+
+                        // User avatar / icon
+                        Rectangle {
+                            width: 36
+                            height: 36
+                            radius: 18
+                            color: root.mainController && root.mainController.authManager
+                                   && root.mainController.authManager.isLoggedIn
+                                   ? Theme.primary : Theme.surfaceVariant
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: {
+                                    if (root.mainController && root.mainController.authManager
+                                        && root.mainController.authManager.isLoggedIn) {
+                                        var name = root.mainController.authManager.username
+                                        return name.length > 0 ? name.charAt(0).toUpperCase() : "U"
+                                    }
+                                    return FluentIconGlyph.peopleGlyph
+                                }
+                                font.family: root.mainController && root.mainController.authManager
+                                             && root.mainController.authManager.isLoggedIn
+                                             ? Theme.fontFamily : "Segoe Fluent Icons"
+                                font.pixelSize: root.mainController && root.mainController.authManager
+                                                && root.mainController.authManager.isLoggedIn
+                                                ? 16 : 18
+                                font.weight: Font.Bold
+                                color: root.mainController && root.mainController.authManager
+                                       && root.mainController.authManager.isLoggedIn
+                                       ? "white" : Theme.textSecondary
+                            }
+                        }
+
+                        // Username or "Login" text (only when expanded)
+                        ColumnLayout {
+                            visible: navigationView.isExpanded
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            Text {
+                                text: {
+                                    if (root.mainController && root.mainController.authManager
+                                        && root.mainController.authManager.isLoggedIn) {
+                                        return root.mainController.authManager.username
+                                    }
+                                    return qsTr("Login")
+                                }
+                                font.pixelSize: Theme.fontSizeMedium
+                                font.weight: Font.DemiBold
+                                color: Theme.text
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: root.mainController && root.mainController.authManager
+                                         && root.mainController.authManager.isLoggedIn
+                                text: "QuickDesk v" + APP_VERSION
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.textSecondary
+                            }
+
+                            Text {
+                                visible: !(root.mainController && root.mainController.authManager
+                                           && root.mainController.authManager.isLoggedIn)
+                                text: qsTr("Click to login")
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.textSecondary
+                            }
+                        }
+                    }
+                }
+
+                // User menu (when logged in)
+                Menu {
+                    id: userMenu
+
+                    MenuItem {
+                        text: qsTr("Logout")
+                        onTriggered: {
+                            root.mainController.authManager.logout()
+                        }
                     }
                 }
             }
@@ -473,7 +572,40 @@ ApplicationWindow {
                         root.disconnectFromRemoteHost(connectionId)
                     }
                 }
-                
+
+                // Device List Page
+                DeviceListPage {
+                    id: deviceListPage
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    mainController: root.mainController
+
+                    onConnectToDevice: function(deviceId, accessCode) {
+                        // Switch to Remote Control tab
+                        navigationView.currentIndex = 0
+                        // Initiate connection
+                        toast.show(qsTr("Connecting..."), QDToast.Type.Info)
+                        var connId = root.mainController.connectToRemoteHost(deviceId, accessCode)
+                        if (connId) {
+                            root.pendingDeviceCredentials[connId] = {
+                                deviceId: deviceId,
+                                password: accessCode
+                            }
+                            if (!root.showRemoteWindow(connId, deviceId)) {
+                                delete root.pendingDeviceCredentials[connId]
+                                var newAborted = Object.assign({}, root.abortedConnections)
+                                newAborted[connId] = true
+                                root.abortedConnections = newAborted
+                                root.mainController.clientManager.disconnectFromHost(connId)
+                            }
+                        }
+                    }
+
+                    onShowToast: function(message, toastType) {
+                        toast.show(message, toastType)
+                    }
+                }
+
                 // Settings Page
                 SettingsPage {
                     Layout.fillWidth: true
@@ -751,6 +883,11 @@ ApplicationWindow {
     
     McpConfigPopup {
         id: mcpConfigPopup
+        mainController: root.mainController
+    }
+
+    LoginDialog {
+        id: loginDialog
         mainController: root.mainController
     }
 }

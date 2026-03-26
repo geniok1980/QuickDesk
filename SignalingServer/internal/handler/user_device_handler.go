@@ -11,7 +11,8 @@ import (
 
 // UserDeviceHandler manages user-device binding operations.
 type UserDeviceHandler struct {
-	db *gorm.DB
+	db           *gorm.DB
+	syncNotifier func(userID uint, msg interface{})
 }
 
 // NewUserDeviceHandler creates a new UserDeviceHandler.
@@ -112,7 +113,8 @@ func (h *UserDeviceHandler) UnbindDevice(c *gin.Context) {
 }
 
 // GetUserDevices handles GET /api/v1/user/devices
-// Returns all devices bound to a user (from the devices table).
+// Returns all devices bound to a user (from the devices table),
+// enriched with remark from user_devices, access_code and online status.
 func (h *UserDeviceHandler) GetUserDevices(c *gin.Context) {
 	userID, _ := c.Get("authed_user_id")
 
@@ -122,7 +124,29 @@ func (h *UserDeviceHandler) GetUserDevices(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"devices": devices, "count": len(devices)})
+	// Build a map of device_id → UserDevice for remark lookup
+	var userDevices []models.UserDevice
+	h.db.Where("user_id = ? AND status = ?", userID, true).Find(&userDevices)
+	udMap := make(map[string]models.UserDevice)
+	for _, ud := range userDevices {
+		udMap[ud.DeviceID] = ud
+	}
+
+	type DeviceInfo struct {
+		models.Device
+		Remark string `json:"remark"`
+	}
+
+	result := make([]DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		info := DeviceInfo{Device: d}
+		if ud, ok := udMap[d.DeviceID]; ok {
+			info.Remark = ud.DeviceName
+		}
+		result = append(result, info)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"devices": result, "count": len(result)})
 }
 
 // GetUserDeviceLogs handles GET /api/v1/user/devices/logs
@@ -268,4 +292,263 @@ func (h *UserDeviceHandler) logConnection(userID uint, deviceID, deviceName, sta
 		ErrorMsg:   errorMsg,
 	}
 	h.db.Create(&entry)
+}
+
+// SetSyncNotifier sets the callback used to push sync messages to connected clients.
+func (h *UserDeviceHandler) SetSyncNotifier(fn func(userID uint, msg interface{})) {
+	h.syncNotifier = fn
+}
+
+// notifySync pushes a sync message to the user's connected clients if a notifier is set.
+func (h *UserDeviceHandler) notifySync(userID uint, msg interface{}) {
+	if h.syncNotifier != nil {
+		h.syncNotifier(userID, msg)
+	}
+}
+
+// AutoBindDevice handles POST /api/v1/user/devices/auto-bind
+// Host calls this when the user logs in to automatically bind the device.
+func (h *UserDeviceHandler) AutoBindDevice(c *gin.Context) {
+	var req struct {
+		DeviceID string `json:"device_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var device models.Device
+	if result := h.db.Where("device_id = ?", req.DeviceID).First(&device); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
+		return
+	}
+
+	if device.UserID != 0 && device.UserID != authedUserID {
+		c.JSON(http.StatusConflict, gin.H{"error": "设备已绑定其他用户"})
+		return
+	}
+
+	// Update device ownership
+	device.UserID = authedUserID
+	h.db.Save(&device)
+
+	// Upsert UserDevice: reactivate if exists but inactive, create otherwise
+	var existing models.UserDevice
+	result := h.db.Where("user_id = ? AND device_id = ?", authedUserID, req.DeviceID).First(&existing)
+	if result.Error == nil {
+		// Record exists — reactivate if needed
+		if !existing.Status {
+			existing.Status = true
+		}
+		existing.BindType = "auto"
+		existing.LastConnect = time.Now()
+		existing.ConnectCount++
+		h.db.Save(&existing)
+	} else {
+		existing = models.UserDevice{
+			UserID:       authedUserID,
+			DeviceID:     req.DeviceID,
+			DeviceName:   "设备-" + req.DeviceID,
+			BindType:     "auto",
+			Status:       true,
+			LastConnect:  time.Now(),
+			ConnectCount: 1,
+		}
+		h.db.Create(&existing)
+	}
+
+	recomputeDeviceCount(h.db, authedUserID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "设备自动绑定成功", "binding": existing})
+}
+
+// UpdateAccessCode handles PUT /api/v1/user/devices/:device_id/access-code
+// Host updates the device access code.
+func (h *UserDeviceHandler) UpdateAccessCode(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	var req struct {
+		AccessCode string `json:"access_code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var device models.Device
+	if result := h.db.Where("device_id = ?", deviceID).First(&device); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "设备不存在"})
+		return
+	}
+
+	if device.UserID != 0 && device.UserID != authedUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此设备"})
+		return
+	}
+
+	device.AccessCode = req.AccessCode
+	h.db.Save(&device)
+
+	h.notifySync(authedUserID, gin.H{
+		"type":        "device_access_code_changed",
+		"device_id":   deviceID,
+		"access_code": req.AccessCode,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "访问码更新成功"})
+}
+
+// UpdateDeviceRemark handles PUT /api/v1/user/devices/:device_id/remark
+// Sets the user-defined remark for a device.
+func (h *UserDeviceHandler) UpdateDeviceRemark(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	var req struct {
+		Remark string `json:"remark" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var binding models.UserDevice
+	if result := h.db.Where("user_id = ? AND device_id = ? AND status = ?", authedUserID, deviceID, true).First(&binding); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "绑定记录不存在"})
+		return
+	}
+
+	binding.DeviceName = req.Remark
+	h.db.Save(&binding)
+
+	h.notifySync(authedUserID, gin.H{
+		"type":      "device_remark_changed",
+		"device_id": deviceID,
+		"remark":    req.Remark,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "备注更新成功"})
+}
+
+// GetFavorites handles GET /api/v1/user/favorites
+// Returns all favorites for the authenticated user.
+func (h *UserDeviceHandler) GetFavorites(c *gin.Context) {
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var favorites []models.UserFavorite
+	if result := h.db.Where("user_id = ?", authedUserID).Order("updated_at DESC").Find(&favorites); result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"favorites": favorites, "count": len(favorites)})
+}
+
+// AddFavorite handles POST /api/v1/user/favorites
+// Adds or updates a favorite device for quick access.
+func (h *UserDeviceHandler) AddFavorite(c *gin.Context) {
+	var req struct {
+		DeviceID       string `json:"device_id" binding:"required"`
+		DeviceName     string `json:"device_name"`
+		AccessPassword string `json:"access_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var favorite models.UserFavorite
+	result := h.db.Where("user_id = ? AND device_id = ?", authedUserID, req.DeviceID).First(&favorite)
+	if result.Error == nil {
+		// Already exists — update it
+		if req.DeviceName != "" {
+			favorite.DeviceName = req.DeviceName
+		}
+		if req.AccessPassword != "" {
+			favorite.AccessPassword = req.AccessPassword
+		}
+		h.db.Save(&favorite)
+	} else {
+		favorite = models.UserFavorite{
+			UserID:         authedUserID,
+			DeviceID:       req.DeviceID,
+			DeviceName:     req.DeviceName,
+			AccessPassword: req.AccessPassword,
+		}
+		if result := h.db.Create(&favorite); result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "添加收藏失败: " + result.Error.Error()})
+			return
+		}
+	}
+
+	h.notifySync(authedUserID, gin.H{
+		"type":     "favorite_added",
+		"favorite": favorite,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "收藏成功", "favorite": favorite})
+}
+
+// UpdateFavorite handles PUT /api/v1/user/favorites/:device_id
+// Updates an existing favorite's fields.
+func (h *UserDeviceHandler) UpdateFavorite(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	var req struct {
+		DeviceName     string `json:"device_name"`
+		AccessPassword string `json:"access_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	var favorite models.UserFavorite
+	if result := h.db.Where("user_id = ? AND device_id = ?", authedUserID, deviceID).First(&favorite); result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "收藏记录不存在"})
+		return
+	}
+
+	if req.DeviceName != "" {
+		favorite.DeviceName = req.DeviceName
+	}
+	if req.AccessPassword != "" {
+		favorite.AccessPassword = req.AccessPassword
+	}
+	h.db.Save(&favorite)
+
+	h.notifySync(authedUserID, gin.H{
+		"type":     "favorite_updated",
+		"favorite": favorite,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "收藏更新成功", "favorite": favorite})
+}
+
+// RemoveFavorite handles DELETE /api/v1/user/favorites/:device_id
+// Removes a favorite device.
+func (h *UserDeviceHandler) RemoveFavorite(c *gin.Context) {
+	deviceID := c.Param("device_id")
+	userIDVal, _ := c.Get("authed_user_id")
+	authedUserID := userIDVal.(uint)
+
+	result := h.db.Where("user_id = ? AND device_id = ?", authedUserID, deviceID).Delete(&models.UserFavorite{})
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "收藏记录不存在"})
+		return
+	}
+
+	h.notifySync(authedUserID, gin.H{
+		"type":      "favorite_removed",
+		"device_id": deviceID,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "取消收藏成功"})
 }

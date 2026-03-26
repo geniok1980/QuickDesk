@@ -13,6 +13,7 @@ Item {
     property string deviceId: ""
     property string placeholderText: qsTr("Enter device ID")
     property var deviceList: []
+    property var mainController: null
     
     // ============ Signals ============
     
@@ -182,27 +183,74 @@ Item {
                         Item {
                             Layout.preferredWidth: 28  // Fixed width for button
                             Layout.fillHeight: true
-                            
+
                             QDIconButton {
                                 anchors.centerIn: parent
                                 visible: delegate.hovered
-                                
+
                                 buttonSize: QDIconButton.Size.Small
                                 buttonStyle: QDIconButton.Style.Transparent
                                 circular: true
-                                
+
                                 iconSource: FluentIconGlyph.deleteGlyph
                                 iconColor: Theme.textSecondary
                                 iconHoverColor: Theme.error
-                                
+
                                 onClicked: {
                                     popup.close()
                                     root.deviceDeleted(modelData.deviceId || modelData)
                                 }
-                                
+
                                 QDToolTip {
                                     visible: parent.hovered
                                     text: qsTr("Delete from history")
+                                }
+                            }
+                        }
+
+                        // Favorite Star Button
+                        Item {
+                            Layout.preferredWidth: 28
+                            Layout.fillHeight: true
+                            visible: root.mainController && root.mainController.authManager
+                                     && root.mainController.authManager.isLoggedIn
+
+                            property string itemDeviceId: modelData.deviceId || modelData
+                            property bool isFav: {
+                                if (!root.mainController || !root.mainController.cloudDeviceManager)
+                                    return false
+                                var favs = root.mainController.cloudDeviceManager.myFavorites
+                                for (var i = 0; i < favs.length; ++i) {
+                                    if (favs[i].device_id === itemDeviceId) return true
+                                }
+                                return false
+                            }
+
+                            QDIconButton {
+                                anchors.centerIn: parent
+
+                                buttonSize: QDIconButton.Size.Small
+                                buttonStyle: QDIconButton.Style.Transparent
+                                circular: true
+
+                                iconSource: parent.isFav
+                                            ? FluentIconGlyph.favoriteStarFillGlyph
+                                            : FluentIconGlyph.favoriteStarGlyph
+                                iconColor: parent.isFav ? Theme.warning : Theme.textSecondary
+                                iconHoverColor: Theme.warning
+
+                                onClicked: {
+                                    var did = parent.itemDeviceId
+                                    if (parent.isFav) {
+                                        root.mainController.cloudDeviceManager.removeFavorite(did)
+                                    } else {
+                                        root.mainController.cloudDeviceManager.addFavorite(did, "", "")
+                                    }
+                                }
+
+                                QDToolTip {
+                                    visible: parent.hovered
+                                    text: parent.parent.isFav ? qsTr("Remove from favorites") : qsTr("Add to favorites")
                                 }
                             }
                         }

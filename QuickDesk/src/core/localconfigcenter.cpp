@@ -120,4 +120,8 @@ LCC_FUNCTION_IMP_STRING(mcpTransportMode, McpTransportMode);
 LCC_FUNCTION_IMP_STRING(extraSkillsDirs, ExtraSkillsDirs);
 LCC_FUNCTION_IMP_STRING(trustConfirmMode, TrustConfirmMode);
 
+LCC_FUNCTION_IMP_STRING(userToken, UserToken);
+LCC_FUNCTION_IMP_STRING(userId, UserId);
+LCC_FUNCTION_IMP_STRING(username, Username);
+
 }

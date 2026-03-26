@@ -19,6 +19,8 @@ set(MANAGER_SOURCES
     src/manager/RemoteDeviceManager.cpp
     src/manager/PresetManager.cpp
     src/manager/AgentManager.cpp
+    src/manager/AuthManager.cpp
+    src/manager/CloudDeviceManager.cpp
 )
 
 set(MANAGER_HEADERS
@@ -32,6 +34,8 @@ set(MANAGER_HEADERS
     src/manager/RemoteDeviceManager.h
     src/manager/PresetManager.h
     src/manager/AgentManager.h
+    src/manager/AuthManager.h
+    src/manager/CloudDeviceManager.h
 )
 
 set(CONTROLLER_SOURCES
@@ -232,6 +236,8 @@ qt_add_qml_module(QuickDesk
         qml/quickdeskcomponent/ConnectionListPanel.qml
         qml/quickdeskcomponent/RemoteDeviceSelector.qml
         qml/quickdeskcomponent/VideoStatsOverlay.qml
+        qml/quickdeskcomponent/LoginDialog.qml
+        qml/pages/DeviceListPage.qml
     RESOURCES
         res/font/SegoeFluentIcons.ttf
         qml/component/qmldir

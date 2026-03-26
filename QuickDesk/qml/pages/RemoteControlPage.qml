@@ -281,6 +281,7 @@ Item {
                                 id: remoteDeviceSelector
                                 width: parent.width
                                 placeholderText: qsTr("Enter 9-digit device ID")
+                                mainController: root.mainController
                                 
                                 deviceList: mainController && mainController.remoteDeviceManager ? 
                                            mainController.remoteDeviceManager.deviceList : []
