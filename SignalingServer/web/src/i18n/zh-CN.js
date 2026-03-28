@@ -101,7 +101,10 @@ export default {
     tabEn: 'English (en_US)',
     announcementEn: 'Announcement',
     noticePlaceholderZh: "支持 HTML，如：维护通知 <a href='https://...'>查看详情</a>",
-    noticePlaceholderEn: "Supports HTML, e.g.: Maintenance <a href='https://...'>Details</a>"
+    noticePlaceholderEn: "Supports HTML, e.g.: Maintenance <a href='https://...'>Details</a>",
+    webclientUrl: 'WebClient URL',
+    webclientUrlPlaceholder: 'https://web.quickdesk.cc',
+    webclientUrlTip: '设置 WebClient 的部署地址。客户端会在界面中展示此链接，方便用户快速访问 WebClient。'
   },
   userMgmt: {
     title: '用户管理',

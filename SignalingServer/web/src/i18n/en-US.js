@@ -101,7 +101,10 @@ export default {
     tabEn: 'English (en_US)',
     announcementEn: 'Announcement',
     noticePlaceholderZh: "Supports HTML, e.g.: Maintenance <a href='https://...'>Details</a>",
-    noticePlaceholderEn: "Supports HTML, e.g.: Maintenance <a href='https://...'>Details</a>"
+    noticePlaceholderEn: "Supports HTML, e.g.: Maintenance <a href='https://...'>Details</a>",
+    webclientUrl: 'WebClient URL',
+    webclientUrlPlaceholder: 'https://web.quickdesk.cc',
+    webclientUrlTip: 'Set the WebClient deployment URL. The native client will display this link in its UI for quick access to the WebClient.'
   },
   userMgmt: {
     title: 'User Management',

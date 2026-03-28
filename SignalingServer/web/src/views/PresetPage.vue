@@ -21,6 +21,25 @@
         </el-form-item>
       </el-card>
 
+      <!-- WebClient URL -->
+      <el-card shadow="never" class="section-card">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Monitor /></el-icon>
+            <span>WebClient</span>
+          </div>
+        </template>
+        <el-form-item :label="t('preset.webclientUrl')">
+          <el-input
+            v-model="form.webclientUrl"
+            :placeholder="t('preset.webclientUrlPlaceholder')"
+            style="width: 100%; max-width: 500px"
+            clearable
+          />
+          <div class="form-tip">{{ t('preset.webclientUrlTip') }}</div>
+        </el-form-item>
+      </el-card>
+
       <!-- 公告 -->
       <el-card shadow="never" class="section-card">
         <template #header>
@@ -108,6 +127,7 @@ const lastUpdated = ref('')
 
 const emptyForm = () => ({
   minVersion: '',
+  webclientUrl: '',
   notice: { zh_CN: '', en_US: '' },
   links: { zh_CN: [], en_US: [] }
 })
@@ -132,6 +152,7 @@ async function loadPreset() {
     const links = parseJsonField(data.links, { zh_CN: [], en_US: [] })
 
     form.minVersion = data.min_version || ''
+    form.webclientUrl = data.webclient_url || ''
     form.notice.zh_CN = notice.zh_CN || ''
     form.notice.en_US = notice.en_US || ''
     form.links.zh_CN = links.zh_CN || []
@@ -154,7 +175,8 @@ async function handleSave() {
     const payload = {
       notice: JSON.stringify(form.notice),
       links: JSON.stringify(form.links),
-      min_version: form.minVersion
+      min_version: form.minVersion,
+      webclient_url: form.webclientUrl
     }
     await updatePreset(payload)
     serverSnapshot = JSON.parse(JSON.stringify(form))
