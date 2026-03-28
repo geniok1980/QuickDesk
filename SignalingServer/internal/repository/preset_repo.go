@@ -48,5 +48,6 @@ func (r *PresetRepository) UpsertPreset(preset *models.Preset) error {
 	existing.Notice = preset.Notice
 	existing.Links = preset.Links
 	existing.MinVersion = preset.MinVersion
+	existing.WebclientURL = preset.WebclientURL
 	return r.db.Save(&existing).Error
 }
