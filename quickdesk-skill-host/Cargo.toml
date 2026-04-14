@@ -5,6 +5,7 @@ members = [
     "skills/sys-info",
     "skills/file-ops",
     "skills/shell-runner",
+    "skills/python-executor",
 ]
 resolver = "2"
 

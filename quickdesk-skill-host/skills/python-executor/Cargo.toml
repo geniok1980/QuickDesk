@@ -1,0 +1,16 @@
+[package]
+name = "python-executor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mcp-server-common = { path = "../../common" }
+anyhow = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["process", "time"] }
+tracing-subscriber = "0.3"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
