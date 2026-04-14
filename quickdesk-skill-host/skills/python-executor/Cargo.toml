@@ -1,14 +1,21 @@
 [package]
 name = "python-executor"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+description = "MCP server skill — Python code execution for remote host"
+
+[[bin]]
+name = "python-executor"
+path = "src/main.rs"
 
 [dependencies]
-mcp-server-common = { path = "../../common" }
-anyhow = "1"
-serde_json = "1"
-tokio = { version = "1", features = ["process", "time"] }
-tracing-subscriber = "0.3"
+mcp-server-common = { path = "../../mcp-server-common" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
 
 [profile.release]
 strip = true

@@ -401,6 +401,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "python-executor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "mcp-server-common",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "quickdesk-skill-host"
 version = "0.1.0"
 dependencies = [
