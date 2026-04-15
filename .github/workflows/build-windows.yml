@@ -12,53 +12,25 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      # 1. Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Установить Rust
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        
-      # 3. Кэшировать
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: quickdesk-skill-host
 
-      # 4. Собрать
       - name: Build
+        shell: bash
         run: |
           cd quickdesk-skill-host
           cargo build -p python-executor --release
-          dir target/release
+          ls -la target/release/python-executor.exe || ls -la target/release/
 
-      # 5. Показать что собралось
-      - name: List output
-        run: |
-          ls -la quickdesk-skill-host/target/release/python-executor.exe
-
-      # 6. Упаковать в ZIP
-      - name: Create ZIP
-        run: |
-          cd quickdesk-skill-host/target/release
-          mkdir -p dist
-          cp python-executor.exe dist/
-          Compress-Archive -Path dist/* -DestinationPath python-executor-windows-x64.zip
-          ls -la *.zip
-
-      # 7. Upload
-      - name: Upload Release
-        uses: softprops/action-gh-release@v1
-        if: github.event_name == 'release'
-        with:
-          files: quickdesk-skill-host/target/release/python-executor-windows-x64.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 8. Upload artifact
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: python-executor-windows
-          path: quickdesk-skill-host/target/release/python-executor-windows-x64.zip
+          name: python-executor-windows-x64
+          path: |
+            quickdesk-skill-host/target/release/python-executor.exe
+            quickdesk-skill-host/target/release/python-executor-windows-x64.zip
+          retention-days: 5
