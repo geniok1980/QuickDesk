@@ -74,7 +74,7 @@ echo [*] copied quickdesk-skill-host.exe to !dest_dir!
 
 :: copy skill binaries and SKILL.md into per-skill subdirectories
 set skills_src=%skill_host_dir%\skills
-for %%s in (sys-info file-ops shell-runner) do (
+for %%s in (sys-info file-ops shell-runner python-executor) do (
     if not exist "!dest_dir!\skills\%%s" mkdir "!dest_dir!\skills\%%s"
     copy /Y "!cargo_out!\%%s.exe" "!dest_dir!\skills\%%s\" >nul
     copy /Y "!skills_src!\%%s\SKILL.md" "!dest_dir!\skills\%%s\" >nul
