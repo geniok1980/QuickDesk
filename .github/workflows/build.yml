@@ -1,0 +1,255 @@
+name: Build python-executor
+
+on:
+  # Сборка при пуше в main для python-executor
+  push:
+    paths:
+      - 'quickdesk-skill-host/skills/python-executor/**'
+    branches: [main, master]
+  
+  # Сборка по требованию
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        type: string
+
+  # Автоматический release при создании тега
+  release:
+    types: [published]
+
+jobs:
+  # ==========================================
+  # BUILD для всех платформ
+  # ==========================================
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: python-executor-x64.exe
+            zip: python-executor-windows-x64.zip
+          
+          # Windows ARM64
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact: python-executor-arm64.exe
+            zip: python-executor-windows-arm64.zip
+          
+          # Linux x64
+          - platform: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: python-executor-x64
+            zip: python-executor-linux-x64.tar.gz
+          
+          # Linux ARM64
+          - platform: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: python-executor-arm64
+            zip: python-executor-linux-arm64.tar.gz
+          
+          # macOS x64 (Intel)
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            artifact: python-executor-x64
+            zip: python-executor-macos-x64.tar.gz
+          
+          # macOS ARM64 (M1/M2/M3)
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            artifact: python-executor-arm64
+            zip: python-executor-macos-arm64.tar.gz
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      # 1. Checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Установка Rust
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # 3. Добавить target для кросс-компиляции
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      # 4. Кэширование Rust
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: quickdesk-skill-host
+
+      # 5. Собрать (release mode)
+      - name: Build
+        run: |
+          cd quickdesk-skill-host
+          cargo build -p python-executor --release --target ${{ matrix.target }}
+
+      # 6. Создать artifact
+      - name: Create artifact
+        shell: bash
+        run: |
+          cd quickdesk-skill-host
+          
+          # Windows
+          if [[ "${{ matrix.platform }}" == *"windows"* ]]; then
+            # Добавить .exe если нужно
+            if [[ "${{ matrix.artifact }}" != *.exe ]]; then
+              mv target/${{ matrix.target }}/release/${{ matrix.artifact }} target/${{ matrix.target }}/release/${{ matrix.artifact }}.exe
+            fi
+            mkdir -p dist
+            cp target/${{ matrix.target }}/release/${{ matrix.artifact }} dist/
+          else
+            # Unix - убрать .exe если есть
+            artifact_name="${{ matrix.artifact }}"
+            artifact_name="${artifact_name%.exe}"
+            mkdir -p dist
+            cp target/${{ matrix.target }}/release/$artifact_name dist/
+          fi
+
+      # 7. Загрузить artifact
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-build
+          path: quickdesk-skill-host/dist/
+          retention-days: 30
+
+  # ==========================================
+  # СОЗДАТЬ RELEASE
+  # ==========================================
+  release:
+    needs: build
+    if: github.event_name == 'release' || github.event.inputs.version != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Скачать все artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      # 3. Показать что скачали
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      # 4. Создать ZIP/TAR для каждой платформы
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        run: |
+          cd artifacts
+          for dir in */; do
+            name="${dir%/}"
+            if [[ "$name" == *"windows"* ]]; then
+              echo "Packaging: $name"
+              cd "$name"
+              7z a -tzip "../${name}.zip" ./*.exe
+              cd ..
+            fi
+          done
+
+      - name: Package Unix
+        if: runner.os != 'Windows'
+        run: |
+          cd artifacts
+          for dir in */; do
+            name="${dir%/}"
+            if [[ "$name" == *"linux"* ]] || [[ "$name" == *"macos"* ]]; then
+              echo "Packaging: $name"
+              cd "$name"
+              # Взять первый файл
+              file=$(ls -1 | head -1)
+              if [[ "$name" == *"windows"* ]]; then
+                7z a -tzip "../${name}.zip" ./*
+              else
+                tar -czf "../${name}.tar.gz" ./*
+              fi
+              cd ..
+            fi
+          done
+
+      # 5. Проверить релиз
+      - name: List release files
+        run: ls -la *.zip *.tar.gz 2>/dev/null || echo "No archives yet"
+
+      # 6. Загрузить на GitHub Release
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'release'
+        with:
+          files: |
+            *.zip
+            *.tar.gz
+            *.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================
+  # СОЗДАТЬ ДРАФТ RELEASE
+  # ==========================================
+  draft-release:
+    needs: build
+    if: github.event.inputs.version != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Скачать artifacts
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      # 3. Создать директорию для релиз файлов
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          # Скопировать все exe и архивы
+          find artifacts -name "*.exe" -exec cp {} release-files/ \;
+          find artifacts -name "*.zip" -exec cp {} release-files/ \;
+          find artifacts -name "*.tar.gz" -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      # 4. Создать драфт релиза
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          prerelease: false
+          tag_name: ${{ github.event.inputs.version }}
+          name: python-executor ${{ github.event.inputs.version }}
+          body: |
+            ## Скачать
+            
+            ### Windows
+            - [python-executor-windows-x64.zip](python-executor-windows-x64.zip)
+            
+            ### Linux
+            - [python-executor-linux-x64.tar.gz](python-executor-linux-x64.tar.gz)
+            
+            ### macOS
+            - [python-executor-macos-x64.tar.gz](python-executor-macos-x64.tar.gz)
+            
+            ## Изменения
+            Автоматическая сборка python-executor skill для QuickDesk.
+            
+          generate_release_notes: true
+          files: release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
